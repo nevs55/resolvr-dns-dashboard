@@ -74,7 +74,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use("/api/environments", requireAuth, environmentsRoutes(db, { fetchImpl, managed: options.addon?.managed ?? false }));
   app.get("/api/status", requireAuth, statusRoute(db, { fetchImpl }));
   app.get("/api/overview", requireAuth, overviewRoute(db, { fetchImpl }));
-  app.use("/api/actions", requireAdmin, actionRoutes(db, { fetchImpl }));
+  app.use("/api/actions", requireAdmin, actionRoutes());
 
   app.all("/api/technitium/*splat", requireAuth, async (req: Request, res: Response) => {
     if (req.method !== "GET") {

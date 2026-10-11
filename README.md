@@ -22,11 +22,10 @@ A monitoring dashboard for [Technitium DNS Server](https://technitium.com/dns/) 
   Every chart is clickable and jumps to Query Logs filtered to what you clicked.
 - **Clients** — pick any device and see its queries, block rate, DHCP lease, activity, top and blocked domains, protocols and latest queries. A traffic-share bar and a recent-activity grid show who is busy; search, filter (heavy blocking, rate limited, new, quiet) and sort the list.
 - **Query Logs** with real filtering — client IP, query name, response type, protocol, RCODE, record type, and a time window — plus a per-host "allowed vs. blocked" breakdown, CSV export and a live-tail toggle.
-- **Blocked Zones** — a status card showing when the block lists were last updated and when the next update is, with an **Update now** button and a history of how many domains the lists held after each refresh. Below it, three tabs: **Feeds** (add, remove, reorder and group the feeds you subscribe to, with one save bar), **Your domains** (a searchable list of domains you block yourself, with paste-a-list and undo), and **Check a domain** (asks your server whether a name is blocked, and which feed blocked it).
-- **Its own users and roles** — Admins can manage users, edit the Technitium connection, and use the handful of mutating actions below; Viewers get full read access to every monitoring page and nothing else.
-- **A set of deliberate, narrow admin actions** on top of an otherwise read-only design: flush the DNS cache, force a block-list update, add/remove a blocked domain, edit block list feeds, revoke a stale session, uninstall an app, and manage simple host-to-IP mappings (create a zone, add an A/AAAA record, delete the zone — the same pattern as AdGuard Home's "DNS rewrites"). Each one is a single hardcoded call to a specific Technitium endpoint, gated to the admin role, and confirmed before it runs — never a general write proxy.
+- **Blocked Zones** — a status card showing when the block lists were last updated and when the next update is, plus a history of how many domains the lists held after each refresh. Below it, three read-only tabs: **Feeds** (the feeds your server subscribes to, grouped under their headings), **Your domains** (a searchable list of the domains you block yourself), and **Check a domain** (asks your server whether a name is blocked, and which feed blocked it).
+- **Its own users and roles** — Admins manage users and edit the Technitium connection (Resolvr's own settings, held in its own SQLite database); Viewers get full read access to every monitoring page and nothing else. No role can change anything on the DNS server.
 
-Resolvr never touches anything on your DNS server beyond that short, explicit list of admin actions — every other page only reads. A Viewer account can't use any of them.
+Resolvr is strictly read-only toward your DNS server. Every page only reads — no role, not even an admin, can change records, settings, tokens, block lists, cache, zones, apps, or sessions through Resolvr. To change your DNS server, use Technitium's own admin console.
 
 The query-based panels (Resolution, Clients, Query Logs) need one of Technitium's query-logging apps installed on the server; the page tells you when it is missing. A few small things are remembered in your browser rather than on the server: the open tab, the block-list and cache history, and which clients you have already seen.
 
@@ -46,7 +45,7 @@ The screenshots use made-up data: private-range IPs, generic device names, and `
 
 Two small services:
 
-- **`backend/`** — a stateless Node/Express proxy in front of Technitium's HTTP API (Technitium sends no CORS headers, so the browser can't call it directly), plus a small SQLite database (`better-sqlite3`) holding Resolvr's own users, sessions, and the admin-managed Technitium connection(s). The main proxy (`/api/technitium/*`) only forwards `GET` requests on a hardcoded allowlist of read endpoints — nothing else gets through, regardless of what a client sends. Separately, a handful of admin-only action routes (`/api/actions/*`) each call exactly one specific mutating Technitium endpoint — flush cache, force a block-list update, add/remove a blocked domain, edit block list source URLs, revoke a session, uninstall an app, create/delete a zone, add a record — gated by role, never a general write proxy.
+- **`backend/`** — a stateless Node/Express proxy in front of Technitium's HTTP API (Technitium sends no CORS headers, so the browser can't call it directly), plus a small SQLite database (`better-sqlite3`) holding Resolvr's own users, sessions, and the admin-managed Technitium connection(s). The proxy (`/api/technitium/*`) forwards only `GET` requests on a hardcoded allowlist of read endpoints — nothing else gets through, regardless of what a client sends. Every Technitium mutation is denied outright: the former `/api/actions/*` routes now return 403 for every caller (admins included) and never reach the DNS server, and the mutating helper that backed them has been removed from the runtime (quarantined at `backend/quarantine/technitiumAction.ts`). The only writes Resolvr ever performs are to its own SQLite database — users, sessions, and server connections.
 - **`frontend/`** — a Vue 3 + TypeScript + Vite SPA, served as static files in production.
 
 ```
@@ -205,8 +204,8 @@ On first boot (empty database), the backend seeds these accounts from the enviro
 
 | Username | Password | Role | Can do |
 |---|---|---|---|
-| `admin` | `change-me-on-first-login` | Admin | Everything — manage users, edit the Technitium connection, and the handful of mutating actions (flush cache, block-list updates, etc.) |
-| `viewer` | `change-me-on-first-login` | Viewer | Every monitoring page, read-only. No Users, no Connection Settings, no mutating actions. |
+| `admin` | `change-me-on-first-login` | Admin | Everything Resolvr itself offers — manage users and edit the Technitium connection. Like the viewer, read-only toward the DNS server. |
+| `viewer` | `change-me-on-first-login` | Viewer | Every monitoring page, read-only. No Users, no Connection Settings. |
 
 **Change both passwords immediately** — from the Users page once signed in as `admin`. The viewer account is optional (see `VIEWER_USERNAME`/`VIEWER_PASSWORD` above); omit those two variables if you don't want one seeded.
 

@@ -73,6 +73,30 @@ describe("proxy allowlist enforcement", () => {
   });
 });
 
+describe("mutating actions are denied even for admins", () => {
+  it("rejects a legacy action URL for an admin, never calling upstream", async () => {
+    const fetchImpl = vi.fn();
+    const { agent } = await setupAuthed(fetchImpl);
+
+    const res = await agent.post("/api/actions/flush-cache");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/read-only/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("keeps every mutating Technitium endpoint out of reach of the GET proxy", async () => {
+    const fetchImpl = vi.fn();
+    const { agent } = await setupAuthed(fetchImpl);
+
+    for (const path of ["cache/flush", "settings/set", "blocked/add", "apps/uninstall", "zones/create"]) {
+      const res = await agent.get(`/api/technitium/${path}`);
+      expect(res.status).toBe(403);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
 describe("proxy forwarding", () => {
   let fetchImpl: ReturnType<typeof vi.fn<typeof fetch>>;
 

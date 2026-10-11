@@ -3,7 +3,6 @@
 // are entirely separate from the Technitium proxy in technitium.ts:
 // nothing here ever talks to the DNS server directly.
 import { resolveBackendUrl } from "../lib/backendUrl"
-import { getActiveEnvironmentId } from "../lib/activeEnv"
 
 const BACKEND_URL = resolveBackendUrl()
 
@@ -137,60 +136,3 @@ export function changeUserPassword(id: number, password: string): Promise<{ stat
   return call(`/api/users/${id}/password`, { method: "PUT", body: JSON.stringify({ password }) })
 }
 
-// Admin-only mutating actions — the one deliberate exception to this
-// dashboard's read-only design (see backend/src/routes/actionRoutes.ts).
-// Each targets the active environment via the `env` query parameter.
-function actionCall<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const env = getActiveEnvironmentId()
-  return call<T>(env === undefined ? path : `${path}?env=${env}`, init)
-}
-
-export function flushCache(): Promise<{ status: string }> {
-  return actionCall("/api/actions/flush-cache", { method: "POST" })
-}
-
-export function forceUpdateBlockLists(): Promise<{ status: string }> {
-  return actionCall("/api/actions/update-block-lists", { method: "POST" })
-}
-
-export function revokeSession(partialToken: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/revoke-session", { method: "POST", body: JSON.stringify({ partialToken }) })
-}
-
-export function updateBlockListUrls(urls: string[]): Promise<{ status: string }> {
-  return actionCall("/api/actions/block-list-urls", { method: "PUT", body: JSON.stringify({ urls }) })
-}
-
-export function blockDomain(domain: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/block-domain", { method: "POST", body: JSON.stringify({ domain }) })
-}
-
-export function unblockDomain(domain: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/unblock-domain", { method: "POST", body: JSON.stringify({ domain }) })
-}
-
-export function uninstallApp(name: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/uninstall-app", { method: "POST", body: JSON.stringify({ name }) })
-}
-
-// Host-to-IP mapping (the AdGuard "DNS rewrites" equivalent) — see
-// backend/src/routes/actionRoutes.ts for why this is a zone create
-// followed by a record add, mirroring the one-zone-per-hostname
-// pattern already used on this server.
-export function createZone(zone: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/create-zone", { method: "POST", body: JSON.stringify({ zone }) })
-}
-
-export function addRecord(params: {
-  domain: string
-  zone?: string
-  type: "A" | "AAAA"
-  ipAddress: string
-  ttl?: number
-}): Promise<{ status: string }> {
-  return actionCall("/api/actions/add-record", { method: "POST", body: JSON.stringify(params) })
-}
-
-export function deleteZone(zone: string): Promise<{ status: string }> {
-  return actionCall("/api/actions/delete-zone", { method: "POST", body: JSON.stringify({ zone }) })
-}

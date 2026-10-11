@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { mount } from "@vue/test-utils"
 import { TechnitiumApiError } from "../../api/technitium"
-import { AppApiError } from "../../api/app"
 import ZoneTreeNode from "./ZoneTreeNode.vue"
 
 function flushPromises() {
@@ -38,9 +37,7 @@ describe("ZoneTreeNode", () => {
     // one descendant (e.g. "example") can jump straight to that
     // descendant's own records ("resolvr-e2e-test-domain.example"),
     // skipping the intermediate label entirely. The row must reflect
-    // what's actually blocked, both for display and for Remove (see
-    // the next test) — showing "example" while acting on a different
-    // domain underneath would be actively misleading.
+    // what's actually blocked.
     const fetchNode = vi.fn().mockResolvedValue({
       response: {
         domain: "resolvr-e2e-test-domain.example",
@@ -56,27 +53,6 @@ describe("ZoneTreeNode", () => {
     const label = wrapper.get("span.font-mono")
     expect(label.text()).toBe("resolvr-e2e-test-domain.example")
     expect(wrapper.text()).toContain("Blocked")
-  })
-
-  it("removes the resolved domain, not the originally-requested label, after an auto-descend", async () => {
-    const fetchNode = vi.fn().mockResolvedValue({
-      response: {
-        domain: "resolvr-e2e-test-domain.example",
-        zones: [],
-        records: [{ name: "resolvr-e2e-test-domain.example", type: "SOA", ttl: 30, rData: {} }],
-      },
-    })
-    const deleteDomain = vi.fn().mockResolvedValue({ status: "ok" })
-    const wrapper = mount(ZoneTreeNode, { props: { domain: "example", depth: 0, fetchNode, deleteDomain } })
-
-    await wrapper.get("button").trigger("click")
-    await flushPromises()
-    await wrapper.get(".zone-tree-remove").trigger("click")
-    await wrapper.get("button.text-crit").trigger("click")
-    await flushPromises()
-
-    expect(deleteDomain).toHaveBeenCalledWith("resolvr-e2e-test-domain.example")
-    expect(deleteDomain).not.toHaveBeenCalledWith("example")
   })
 
   it("shows a Blocked badge when the resolved node has its own records (an actual blocked zone)", async () => {
@@ -129,64 +105,15 @@ describe("ZoneTreeNode", () => {
     expect(wrapper.text()).toContain("Invalid token or session expired.")
   })
 
-  describe("removal (admin only)", () => {
-    async function mountBlockedLeaf(deleteDomain: (domain: string) => Promise<{ status: string }>) {
-      const fetchNode = vi.fn().mockResolvedValue({
-        response: { domain: "example.com", zones: [], records: [{ name: "example.com", type: "SOA", ttl: 30, rData: {} }] },
-      })
-      const wrapper = mount(ZoneTreeNode, { props: { domain: "example.com", depth: 0, fetchNode, deleteDomain } })
-      await wrapper.get("button").trigger("click") // expand to learn hasOwnRecords
-      await flushPromises()
-      return wrapper
-    }
-
-    it("offers no Remove control without a deleteDomain prop (e.g. a viewer)", async () => {
-      const fetchNode = vi.fn().mockResolvedValue({
-        response: { domain: "example.com", zones: [], records: [{ name: "example.com", type: "SOA", ttl: 30, rData: {} }] },
-      })
-      const wrapper = mount(ZoneTreeNode, { props: { domain: "example.com", depth: 0, fetchNode } })
-      await wrapper.get("button").trigger("click")
-      await flushPromises()
-
-      expect(wrapper.find(".zone-tree-remove").exists()).toBe(false)
+  it("offers no Remove control to any role — the tree is read-only", async () => {
+    const fetchNode = vi.fn().mockResolvedValue({
+      response: { domain: "example.com", zones: [], records: [{ name: "example.com", type: "SOA", ttl: 30, rData: {} }] },
     })
+    const wrapper = mount(ZoneTreeNode, { props: { domain: "example.com", depth: 0, fetchNode } })
 
-    it("offers no Remove control on a pure grouping label (no records of its own)", async () => {
-      const fetchNode = vi.fn().mockResolvedValue({ response: { domain: "com", zones: ["example.com"], records: [] } })
-      const wrapper = mount(ZoneTreeNode, {
-        props: { domain: "com", depth: 0, fetchNode, deleteDomain: vi.fn() },
-      })
-      await wrapper.get("button").trigger("click")
-      await flushPromises()
+    await wrapper.get("button").trigger("click")
+    await flushPromises()
 
-      expect(wrapper.find(".zone-tree-remove").exists()).toBe(false)
-    })
-
-    it("requires a two-step confirmation, then removes the domain and hides the row", async () => {
-      const deleteDomain = vi.fn().mockResolvedValue({ status: "ok" })
-      const wrapper = await mountBlockedLeaf(deleteDomain)
-
-      await wrapper.get(".zone-tree-remove").trigger("click")
-      expect(deleteDomain).not.toHaveBeenCalled()
-      expect(wrapper.text()).toContain("Confirm")
-
-      await wrapper.get("button.text-crit").trigger("click")
-      await flushPromises()
-
-      expect(deleteDomain).toHaveBeenCalledWith("example.com")
-      expect(wrapper.find("li").exists()).toBe(false)
-    })
-
-    it("shows a readable error, not a raw stack trace, when removal fails, and keeps the row", async () => {
-      const deleteDomain = vi.fn().mockRejectedValue(new AppApiError("Permission denied.", 502))
-      const wrapper = await mountBlockedLeaf(deleteDomain)
-
-      await wrapper.get(".zone-tree-remove").trigger("click")
-      await wrapper.get("button.text-crit").trigger("click")
-      await flushPromises()
-
-      expect(wrapper.text()).toContain("Permission denied.")
-      expect(wrapper.find("li").exists()).toBe(true)
-    })
+    expect(wrapper.find(".zone-tree-remove").exists()).toBe(false)
   })
 })

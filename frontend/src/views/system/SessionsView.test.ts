@@ -6,15 +6,9 @@ vi.mock("../../api/technitium", async () => {
   const actual = await vi.importActual<typeof import("../../api/technitium")>("../../api/technitium")
   return { ...actual, listAdminSessions: vi.fn() }
 })
-vi.mock("../../api/app", async () => {
-  const actual = await vi.importActual<typeof import("../../api/app")>("../../api/app")
-  return { ...actual, revokeSession: vi.fn() }
-})
 
 import { listAdminSessions, TechnitiumApiError } from "../../api/technitium"
-import { revokeSession, AppApiError } from "../../api/app"
 import { useConnectionStore } from "../../stores/connection"
-import { useAuthStore } from "../../stores/auth"
 import SessionsView from "./SessionsView.vue"
 
 function flushPromises() {
@@ -61,7 +55,6 @@ describe("SessionsView", () => {
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(listAdminSessions).mockReset()
-    vi.mocked(revokeSession).mockReset()
   })
 
   it("marks the current session and distinguishes API token vs. standard session type", async () => {
@@ -83,51 +76,12 @@ describe("SessionsView", () => {
     expect(wrapper.find("#sessions-error").text()).toBe("Invalid token or session expired.")
   })
 
-  it("hides revoke actions entirely for a viewer", async () => {
-    useAuthStore().user = { id: 2, username: "reader", role: "viewer" }
+  it("offers no revoke control to any role — the page is read-only", async () => {
     vi.mocked(listAdminSessions).mockResolvedValue(twoSessions)
     const wrapper = await mountConnected()
 
     expect(wrapper.find(".revoke-session").exists()).toBe(false)
-  })
-
-  it("does not offer to revoke the current session, only other sessions", async () => {
-    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
-    vi.mocked(listAdminSessions).mockResolvedValue(twoSessions)
-    const wrapper = await mountConnected()
-
-    expect(wrapper.findAll(".revoke-session")).toHaveLength(1)
-  })
-
-  it("requires a two-step confirmation before revoking, then refreshes the list", async () => {
-    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
-    vi.mocked(listAdminSessions).mockResolvedValueOnce(twoSessions).mockResolvedValueOnce({
-      response: { sessions: [twoSessions.response.sessions[0]!] },
-    })
-    vi.mocked(revokeSession).mockResolvedValue({ status: "ok" })
-    const wrapper = await mountConnected()
-
-    await wrapper.get(".revoke-session").trigger("click")
-    expect(revokeSession).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("Confirm")
-
-    await wrapper.get("button.text-crit").trigger("click")
-    await flushPromises()
-
-    expect(revokeSession).toHaveBeenCalledWith("def456")
-    expect(listAdminSessions).toHaveBeenCalledTimes(2)
-  })
-
-  it("shows a readable error, not a raw stack trace, when revoking fails", async () => {
-    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
-    vi.mocked(listAdminSessions).mockResolvedValue(twoSessions)
-    vi.mocked(revokeSession).mockRejectedValue(new AppApiError("Permission denied.", 502))
-    const wrapper = await mountConnected()
-
-    await wrapper.get(".revoke-session").trigger("click")
-    await wrapper.get("button.text-crit").trigger("click")
-    await flushPromises()
-
-    expect(wrapper.find("#revoke-session-error").text()).toBe("Permission denied.")
+    expect(wrapper.find("#revoke-session-error").exists()).toBe(false)
+    expect(wrapper.text()).toContain("read-only")
   })
 })

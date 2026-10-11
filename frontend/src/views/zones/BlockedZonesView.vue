@@ -2,22 +2,16 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { useConnectionStore } from "../../stores/connection"
 import { useRefreshStore } from "../../stores/refresh"
-import { useAuthStore } from "../../stores/auth"
 import { getDashboardStats, getSettings, TechnitiumApiError } from "../../api/technitium"
-import { updateBlockListUrls, AppApiError } from "../../api/app"
-import { useUndoToast } from "../../composables/useUndoToast"
 import { useRouteTab } from "../../composables/useRouteTab"
 import TabBar from "../../components/ui/TabBar.vue"
 import BlockListStatus from "../../components/blocked/BlockListStatus.vue"
 import BlockListFeeds from "../../components/blocked/BlockListFeeds.vue"
 import BlockedDomains from "../../components/blocked/BlockedDomains.vue"
 import DomainChecker from "../../components/blocked/DomainChecker.vue"
-import UndoToast from "../../components/ui/UndoToast.vue"
 
 const connection = useConnectionStore()
 const refresh = useRefreshStore()
-const auth = useAuthStore()
-const { toast, show, runUndo } = useUndoToast()
 
 // ---------- what the server says about its block lists ----------
 
@@ -60,12 +54,6 @@ async function load(): Promise<void> {
   }
 }
 
-// Used while watching an update finish.
-async function fetchStatus(): Promise<{ next?: string; total: number | null }> {
-  await loadSettings()
-  return { next: nextUpdatedOn.value, total: await loadTotal() }
-}
-
 onMounted(load)
 watch(() => refresh.tick, load)
 watch(
@@ -74,29 +62,6 @@ watch(
     if (configured) load()
   },
 )
-
-// ---------- feeds ----------
-
-const statusRef = ref<InstanceType<typeof BlockListStatus> | null>(null)
-const feedsRef = ref<InstanceType<typeof BlockListFeeds> | null>(null)
-const saving = ref(false)
-const saveError = ref<string | null>(null)
-
-async function onSave(newLines: string[], updateAfter: boolean): Promise<void> {
-  saving.value = true
-  saveError.value = null
-  try {
-    await updateBlockListUrls(newLines)
-    await loadSettings()
-    const feeds = newLines.filter((l) => !l.startsWith("#")).length
-    show(updateAfter ? `Saved ${feeds} feeds. Updating now.` : `Saved ${feeds} feeds. They are used from the next update.`)
-    if (updateAfter) void statusRef.value?.startUpdate()
-  } catch (err) {
-    saveError.value = err instanceof AppApiError ? err.message : "Could not save the feeds."
-  } finally {
-    saving.value = false
-  }
-}
 
 // ---------- pointing at what a domain check matched ----------
 
@@ -108,15 +73,10 @@ function onMatched(m: { feed: string | null; domain: string | null }): void {
   highlightDomain.value = m.domain
 }
 
-const hasUnsavedFeeds = computed(() => Boolean(feedsRef.value?.hasChanges))
-
 // ---------- tabs ----------
 
-// The status card stays on top; what you manage sits in tabs beneath it.
-// Feeds stays mounted when hidden, so an unfinished edit survives a visit
-// to another tab, and the tab says so.
 const tabs = computed(() => [
-  { id: "feeds", label: "Feeds", flag: hasUnsavedFeeds.value ? "Unsaved changes" : null },
+  { id: "feeds", label: "Feeds" },
   { id: "domains", label: "Your domains" },
   { id: "check", label: "Check a domain" },
 ] as const)
@@ -127,7 +87,7 @@ const { tab, setTab } = useRouteTab(["feeds", "domains", "check"] as const, "res
   <div class="flex max-w-[1100px] flex-col gap-3.5">
     <div>
       <h1 class="text-lg font-semibold tracking-tight text-fg">Blocked Zones</h1>
-      <p class="mt-1 text-sm text-gray-500">What your DNS server refuses to resolve: the feeds it downloads, plus domains you block yourself.</p>
+      <p class="mt-1 text-sm text-gray-500">What your DNS server refuses to resolve: the feeds it downloads, plus domains you block yourself. This page is read-only.</p>
     </div>
 
     <p v-if="!connection.isConfigured" class="text-sm text-gray-500">
@@ -139,33 +99,22 @@ const { tab, setTab } = useRouteTab(["feeds", "domains", "check"] as const, "res
       <p v-if="loadError" id="settings-error" class="text-sm text-crit">{{ loadError }}</p>
 
       <BlockListStatus
-        ref="statusRef"
         :enable-blocking="enableBlocking"
         :blocking-type="blockingType"
         :next-updated-on="nextUpdatedOn"
         :interval-hours="intervalHours"
         :total="total"
-        :is-admin="auth.isAdmin"
-        :has-unsaved-feeds="hasUnsavedFeeds"
-        :fetch-status="fetchStatus"
-        @updated="load"
       />
       <TabBar :tabs="tabs" :model-value="tab" id-prefix="blocked-tab" panel-id="blocked-tabpanel" label="Blocked zone sections" class="self-start !mb-0" @update:model-value="setTab" />
       <div id="blocked-tabpanel" role="tabpanel" :aria-labelledby="`blocked-tab-${tab}`">
         <BlockListFeeds
           v-show="tab === 'feeds'"
-          ref="feedsRef"
           :lines="lines"
-          :is-admin="auth.isAdmin"
-          :saving="saving"
-          :save-error="saveError"
           :highlight-url="highlightFeed"
-          @save="onSave"
         />
-        <BlockedDomains v-if="tab === 'domains'" :is-admin="auth.isAdmin" :highlight-domain="highlightDomain" />
+        <BlockedDomains v-if="tab === 'domains'" :highlight-domain="highlightDomain" />
         <DomainChecker v-if="tab === 'check'" @matched="onMatched" @show="setTab" />
       </div>
     </template>
-    <UndoToast :toast="toast" @undo="runUndo" />
   </div>
 </template>

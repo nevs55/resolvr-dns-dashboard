@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import { TechnitiumApiError, type DomainListResult } from "../../api/technitium"
-import { AppApiError } from "../../api/app"
 
 defineOptions({ name: "ZoneTreeNode" })
 
@@ -9,11 +8,6 @@ const props = defineProps<{
   domain: string
   depth: number
   fetchNode: (domain: string) => Promise<DomainListResult>
-  // Admin-only: when given, a "Remove" control appears on any node
-  // that's an actual blocked domain (hasOwnRecords), not on pure
-  // grouping labels like "com" — removing those wouldn't mean anything
-  // to Technitium, since they were never individually added.
-  deleteDomain?: (domain: string) => Promise<{ status: string }>
 }>()
 
 const expanded = ref(false)
@@ -29,10 +23,7 @@ const hasOwnRecords = ref(false)
 // one descendant jumped straight past it to
 // "resolvr-e2e-test-domain.example", its only child, complete with
 // that child's own records). response.domain is this node's real
-// identity once that happens — resolvedDomain tracks it and drives
-// both the label and any delete call, so Remove acts on the domain
-// that's actually blocked rather than the unresolved label that was
-// merely asked for.
+// identity once that happens — resolvedDomain tracks it for the label.
 const resolvedDomain = ref(props.domain)
 
 async function toggle(): Promise<void> {
@@ -52,43 +43,10 @@ async function toggle(): Promise<void> {
     loading.value = false
   }
 }
-
-const confirmingRemove = ref(false)
-const removing = ref(false)
-const removeError = ref<string | null>(null)
-// Removed nodes hide themselves rather than asking the parent to
-// re-fetch its whole children list — this node's own state already
-// knows it's gone, and re-fetching would also blow away sibling nodes'
-// already-expanded state for no reason.
-const removed = ref(false)
-
-function startRemove(): void {
-  confirmingRemove.value = true
-  removeError.value = null
-}
-
-function cancelRemove(): void {
-  confirmingRemove.value = false
-}
-
-async function confirmRemove(): Promise<void> {
-  if (!props.deleteDomain) return
-  removing.value = true
-  removeError.value = null
-  try {
-    await props.deleteDomain(resolvedDomain.value)
-    removed.value = true
-  } catch (err) {
-    removeError.value = err instanceof AppApiError ? err.message : "Could not remove this domain."
-  } finally {
-    removing.value = false
-    confirmingRemove.value = false
-  }
-}
 </script>
 
 <template>
-  <li v-if="!removed">
+  <li>
     <div class="zone-tree-row flex w-full items-center gap-1.5 rounded px-1 py-1 hover:bg-background-hover">
       <button
         type="button"
@@ -125,30 +83,10 @@ async function confirmRemove(): Promise<void> {
           Blocked
         </span>
       </button>
-
-      <div v-if="deleteDomain && hasOwnRecords" class="flex-none">
-        <div v-if="confirmingRemove" class="flex items-center gap-1.5">
-          <button
-            type="button"
-            :disabled="removing"
-            class="text-[11px] font-semibold text-crit disabled:opacity-50"
-            @click="confirmRemove"
-          >
-            {{ removing ? "Removing…" : "Confirm" }}
-          </button>
-          <button type="button" class="text-[11px] text-gray-500" @click="cancelRemove">Cancel</button>
-        </div>
-        <button v-else type="button" class="zone-tree-remove text-[11px] font-medium text-crit" @click="startRemove">
-          Remove
-        </button>
-      </div>
     </div>
 
     <p v-if="loadError" class="text-[11px] text-crit" :style="{ paddingLeft: `${(depth + 1) * 16 + 4}px` }">
       {{ loadError }}
-    </p>
-    <p v-if="removeError" class="text-[11px] text-crit" :style="{ paddingLeft: `${(depth + 1) * 16 + 4}px` }">
-      {{ removeError }}
     </p>
 
     <ul v-if="expanded && children && children.length > 0">
@@ -158,7 +96,6 @@ async function confirmRemove(): Promise<void> {
         :domain="child"
         :depth="depth + 1"
         :fetch-node="fetchNode"
-        :delete-domain="deleteDomain"
       />
     </ul>
     <p

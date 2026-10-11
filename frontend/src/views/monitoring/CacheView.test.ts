@@ -6,13 +6,8 @@ vi.mock("../../api/technitium", async () => {
   const actual = await vi.importActual<typeof import("../../api/technitium")>("../../api/technitium")
   return { ...actual, listCache: vi.fn() }
 })
-vi.mock("../../api/app", async () => {
-  const actual = await vi.importActual<typeof import("../../api/app")>("../../api/app")
-  return { ...actual, flushCache: vi.fn() }
-})
 
 import { listCache, TechnitiumApiError } from "../../api/technitium"
-import { flushCache, AppApiError } from "../../api/app"
 import { useConnectionStore } from "../../stores/connection"
 import { useAuthStore } from "../../stores/auth"
 import CacheView from "./CacheView.vue"
@@ -34,7 +29,6 @@ describe("CacheView", () => {
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(listCache).mockReset()
-    vi.mocked(flushCache).mockReset()
   })
 
   it("renders cached records for a domain the user browses to", async () => {
@@ -100,39 +94,13 @@ describe("CacheView", () => {
     expect(wrapper.get("#browse-cache").text()).toBe("Browse")
   })
 
-  it("hides the Flush cache control for a viewer", async () => {
-    useAuthStore().user = { id: 2, username: "reader", role: "viewer" }
+  it("offers no flush-cache control to any role — the page is read-only", async () => {
+    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
     const wrapper = await mountConnected()
 
     expect(wrapper.find("#flush-cache").exists()).toBe(false)
-  })
-
-  it("requires a two-step confirmation before flushing the cache, then reports success", async () => {
-    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
-    vi.mocked(flushCache).mockResolvedValue({ status: "ok" })
-    const wrapper = await mountConnected()
-
-    await wrapper.get("#flush-cache").trigger("click")
-    expect(flushCache).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain("Clear the entire cache?")
-
-    await wrapper.get("#confirm-flush-cache").trigger("click")
-    await flushPromises()
-
-    expect(flushCache).toHaveBeenCalled()
-    expect(wrapper.text()).toContain("Cache flushed.")
-  })
-
-  it("shows a readable error, not a raw stack trace, when flushing the cache fails", async () => {
-    useAuthStore().user = { id: 1, username: "admin", role: "admin" }
-    vi.mocked(flushCache).mockRejectedValue(new AppApiError("Could not reach Technitium server: timeout", 502))
-    const wrapper = await mountConnected()
-
-    await wrapper.get("#flush-cache").trigger("click")
-    await wrapper.get("#confirm-flush-cache").trigger("click")
-    await flushPromises()
-
-    expect(wrapper.find("#flush-cache-error").text()).toBe("Could not reach Technitium server: timeout")
+    expect(wrapper.find("#confirm-flush-cache").exists()).toBe(false)
+    expect(wrapper.find("#flush-cache-error").exists()).toBe(false)
   })
 
   describe("tree browsing (regression: /api/cache/list is a domain-tree browser, not a flat lookup)", () => {
