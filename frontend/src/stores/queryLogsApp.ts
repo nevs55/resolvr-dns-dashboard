@@ -13,11 +13,22 @@ export const useQueryLogsAppStore = defineStore("queryLogsApp", () => {
   const name = ref<string | null>(null)
   const checked = ref(false)
   const missing = ref(false)
+  let checkedEnvId: number | undefined
 
   async function ensure(credentials: TechnitiumCredentials): Promise<void> {
-    if (checked.value) return
+    // The query-logger app is per-server, so a cached answer from one
+    // environment must not be reused for another.
+    const envId = credentials.envId
+    if (checked.value && envId === checkedEnvId) return
+    checkedEnvId = envId
+    app.value = null
+    name.value = null
+    missing.value = false
     try {
       const res = await listApps(credentials)
+      // The user may have switched servers while this was in flight; a late
+      // answer for the old server must not overwrite the one for the new.
+      if (envId !== checkedEnvId) return
       const match = res.response.apps.find((a) => a.dnsApps?.some((d) => d.isQueryLogger))
       const logger = match?.dnsApps?.find((d) => d.isQueryLogger)
       if (match && logger) {
@@ -33,9 +44,9 @@ export const useQueryLogsAppStore = defineStore("queryLogsApp", () => {
       // If the check itself fails, don't block on it — the subsequent
       // queryLogs()/exportLogs() call (if attempted) will surface its
       // own error instead.
-      missing.value = false
+      if (envId === checkedEnvId) missing.value = false
     } finally {
-      checked.value = true
+      if (envId === checkedEnvId) checked.value = true
     }
   }
 

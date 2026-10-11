@@ -11,6 +11,7 @@ vi.mock("../../api/technitium", async () => {
 import { getDashboardStats } from "../../api/technitium"
 import { useConnectionStore } from "../../stores/connection"
 import { clearCache } from "../../lib/charts"
+import { setActiveEnvironmentId } from "../../lib/activeEnv"
 import HeatmapPanel from "./HeatmapPanel.vue"
 
 // A Monday 09:00 and a Sunday 23:00, local time.
@@ -26,7 +27,7 @@ async function mountPanel() {
     history: createMemoryHistory(),
     routes: [
       { path: "/", component: { template: "<div />" } },
-      { path: "/logs", component: { template: "<div />" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div />" } },
     ],
   })
   await router.push("/")
@@ -40,6 +41,7 @@ describe("HeatmapPanel", () => {
   beforeEach(() => {
     clearCache()
     setActivePinia(createPinia())
+    setActiveEnvironmentId(1)
     vi.mocked(getDashboardStats).mockReset()
   })
 
@@ -77,7 +79,7 @@ describe("HeatmapPanel", () => {
 
     await wrapper.findAll(".heat-cell")[9]!.trigger("click")
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe("/logs")
+    expect(router.currentRoute.value.path).toBe("/env/1/logs")
     const { start, end } = router.currentRoute.value.query as Record<string, string>
     expect(new Date(start).getHours()).toBe(9)
     expect(new Date(end).getTime() - new Date(start).getTime()).toBe(3600_000)

@@ -8,10 +8,15 @@
 
 import { ENDPOINTS } from "./endpoints"
 import { resolveBackendUrl } from "../lib/backendUrl"
+import { getActiveEnvironmentId } from "../lib/activeEnv"
 
 export interface TechnitiumCredentials {
   baseUrl: string
   token: string
+  // The environment this request is for. The backend proxies read this
+  // from the `env` query parameter (see backend/src/app.ts), never from
+  // the credentials themselves.
+  envId?: number
 }
 
 export class TechnitiumApiError extends Error {
@@ -35,6 +40,8 @@ async function technitiumGet<T>(
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) url.searchParams.set(key, String(value))
   }
+  const env = getActiveEnvironmentId()
+  if (env !== undefined) url.searchParams.set("env", String(env))
 
   let res: Response
   try {
@@ -508,6 +515,8 @@ async function technitiumGetBlob(
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) url.searchParams.set(key, String(value))
   }
+  const env = getActiveEnvironmentId()
+  if (env !== undefined) url.searchParams.set("env", String(env))
 
   let res: Response
   try {

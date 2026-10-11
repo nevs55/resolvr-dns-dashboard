@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from "vue"
+import { envScopedKey } from "../lib/activeEnv"
 
 // Backs the Live toggle the wireframe shows on Query Logs — extended to
 // every page that displays query/live server data, not just that one.
@@ -13,7 +14,7 @@ const STORAGE_PREFIX = "resolvr.live."
 function readStored(key: string | undefined): boolean {
   if (!key) return false
   try {
-    return localStorage.getItem(STORAGE_PREFIX + key) === "1"
+    return localStorage.getItem(envScopedKey(STORAGE_PREFIX + key)) === "1"
   } catch {
     return false
   }
@@ -22,7 +23,7 @@ function readStored(key: string | undefined): boolean {
 function writeStored(key: string | undefined, on: boolean): void {
   if (!key) return
   try {
-    localStorage.setItem(STORAGE_PREFIX + key, on ? "1" : "0")
+    localStorage.setItem(envScopedKey(STORAGE_PREFIX + key), on ? "1" : "0")
   } catch {
     // Private mode / blocked storage: the toggle still works, it just
     // won't be remembered.

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { mount } from "@vue/test-utils"
 import { createRouter, createMemoryHistory } from "vue-router"
 import QueriesChart from "./QueriesChart.vue"
+import { setActiveEnvironmentId } from "../../lib/activeEnv"
 
 const labels = ["2026-10-09T10:00:00Z", "2026-10-09T11:00:00Z", "2026-10-09T12:00:00Z", "2026-10-09T13:00:00Z"]
 
@@ -25,7 +26,7 @@ function makeRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: "/", component: { template: "<div />" } },
-      { path: "/logs", component: { template: "<div />" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div />" } },
     ],
   })
 }
@@ -50,6 +51,7 @@ const X = [46, 267, 487, 708]
 describe("QueriesChart", () => {
   beforeEach(() => {
     document.body.innerHTML = ""
+    setActiveEnvironmentId(1)
   })
 
   it("shows an empty state when there are no datasets", () => {
@@ -145,7 +147,7 @@ describe("QueriesChart", () => {
       await select(svg, 1, 2)
       await wrapper.get("#selection-open").trigger("click")
       await new Promise((r) => setTimeout(r, 0))
-      expect(router.currentRoute.value.path).toBe("/logs")
+      expect(router.currentRoute.value.path).toBe("/env/1/logs")
       expect(router.currentRoute.value.query.start).toBe("2026-10-09T11:00:00.000Z")
       // The window ends where the bucket of the last selected point ends.
       expect(router.currentRoute.value.query.end).toBe("2026-10-09T13:00:00.000Z")

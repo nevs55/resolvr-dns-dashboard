@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
 import { fmtInt } from "../../lib/charts"
+import { envScopedKey } from "../../lib/activeEnv"
 import ChartPanel from "../charts/ChartPanel.vue"
 
 const props = defineProps<{ entries: number }>()
@@ -19,7 +20,7 @@ interface Sample {
 
 function readSamples(): Sample[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? "[]") as Sample[]
+    const raw = JSON.parse(localStorage.getItem(envScopedKey(KEY)) ?? "[]") as Sample[]
     return Array.isArray(raw) ? raw.filter((s) => typeof s.t === "number" && typeof s.v === "number") : []
   } catch {
     return []
@@ -37,7 +38,7 @@ watch(
     if (!last || now - last.t >= MIN_GAP_MS) kept.push({ t: now, v })
     samples.value = kept
     try {
-      localStorage.setItem(KEY, JSON.stringify(kept))
+      localStorage.setItem(envScopedKey(KEY), JSON.stringify(kept))
     } catch {
       // Storage blocked: the trend just restarts on the next visit.
     }

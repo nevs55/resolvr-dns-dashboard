@@ -3,27 +3,43 @@ import { createPinia, setActivePinia } from "pinia"
 
 vi.mock("../api/app", async () => {
   const actual = await vi.importActual<typeof import("../api/app")>("../api/app")
-  return { ...actual, getStatus: vi.fn(), setServerConfig: vi.fn() }
+  return {
+    ...actual,
+    getStatus: vi.fn(),
+    listEnvironments: vi.fn(),
+    createEnvironment: vi.fn(),
+    updateEnvironment: vi.fn(),
+    deleteEnvironment: vi.fn(),
+  }
 })
 
-import { getStatus, setServerConfig, AppApiError } from "../api/app"
+import { getStatus, listEnvironments, createEnvironment, AppApiError } from "../api/app"
 import { useConnectionStore } from "./connection"
+import { getActiveEnvironmentId } from "../lib/activeEnv"
+
+const ENV = { id: 1, name: "Home", baseUrl: "http://10.0.60.60:5380" }
+const ENV2 = { id: 2, name: "Office", baseUrl: "http://10.0.70.70:5380" }
 
 describe("connection store", () => {
   beforeEach(() => {
+    sessionStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(getStatus).mockReset()
-    vi.mocked(setServerConfig).mockReset()
+    vi.mocked(listEnvironments).mockReset()
+    vi.mocked(createEnvironment).mockReset()
   })
 
-  it("starts unconfigured before the backend status has been checked", () => {
+  it("starts with no environments and no active selection", () => {
     const store = useConnectionStore()
 
+    expect(store.environments).toEqual([])
+    expect(store.activeEnvId).toBeUndefined()
     expect(store.isConfigured).toBe(false)
     expect(store.status).toBe("idle")
   })
 
-  it("reflects the backend's configured/connected status after testConnection()", async () => {
+  it("loadEnvironments selects the first environment and tests its connection", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV, ENV2], managed: false })
     vi.mocked(getStatus).mockResolvedValue({
       configured: true,
       connected: true,
@@ -32,65 +48,110 @@ describe("connection store", () => {
     })
     const store = useConnectionStore()
 
-    await store.testConnection()
+    await store.loadEnvironments()
 
-    expect(store.isConfigured).toBe(true)
+    expect(store.environments).toEqual([ENV, ENV2])
+    expect(store.activeEnvId).toBe(1)
+    expect(getStatus).toHaveBeenCalledWith(1)
     expect(store.status).toBe("connected")
     expect(store.serverDomain).toBe("dns.villa58.lan")
-    expect(store.serverVersion).toBe("15.4")
-    expect(store.error).toBeNull()
+    // The module-level active environment follows, so API calls get `env`.
+    expect(getActiveEnvironmentId()).toBe(1)
   })
 
-  it("reports an error status when the backend has a config but can't reach Technitium", async () => {
+  it("restores the last-selected environment from sessionStorage", async () => {
+    sessionStorage.setItem("resolvr.activeEnv", "2")
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV, ENV2], managed: false })
     vi.mocked(getStatus).mockResolvedValue({
       configured: true,
-      connected: false,
+      connected: true,
       serverDomain: null,
       serverVersion: null,
-      error: "Could not reach Technitium server: connect ECONNREFUSED",
     })
     const store = useConnectionStore()
 
-    await store.testConnection()
+    await store.loadEnvironments()
 
-    expect(store.status).toBe("error")
-    expect(store.error).toBe("Could not reach Technitium server: connect ECONNREFUSED")
+    expect(store.activeEnvId).toBe(2)
+    expect(getStatus).toHaveBeenCalledWith(2)
   })
 
-  it("stays idle (not an error) when nothing has been configured yet", async () => {
-    vi.mocked(getStatus).mockResolvedValue({ configured: false, connected: false, serverDomain: null, serverVersion: null })
+  it("selectEnvironment retargets the active id and the API layer", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV, ENV2], managed: false })
+    vi.mocked(getStatus).mockResolvedValue({
+      configured: true,
+      connected: true,
+      serverDomain: null,
+      serverVersion: null,
+    })
     const store = useConnectionStore()
+    await store.loadEnvironments()
+    expect(store.activeEnvId).toBe(1)
 
-    await store.testConnection()
+    await store.selectEnvironment(2)
 
-    expect(store.status).toBe("idle")
-    expect(store.isConfigured).toBe(false)
+    expect(store.activeEnvId).toBe(2)
+    expect(getActiveEnvironmentId()).toBe(2)
+    expect(sessionStorage.getItem("resolvr.activeEnv")).toBe("2")
   })
 
-  it("saves new connection details via the backend, which validates before persisting", async () => {
-    vi.mocked(setServerConfig).mockResolvedValue({
-      status: "ok",
+  it("createEnv adds a server via the API and reloads the list", async () => {
+    vi.mocked(createEnvironment).mockResolvedValue({
+      environment: ENV,
+      serverDomain: "dns.villa58.lan",
+      serverVersion: "15.4",
+    })
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV], managed: false })
+    vi.mocked(getStatus).mockResolvedValue({
+      configured: true,
+      connected: true,
       serverDomain: "dns.villa58.lan",
       serverVersion: "15.4",
     })
     const store = useConnectionStore()
 
-    await store.setConfig("http://10.0.60.60:5380", "secret-token")
+    await store.createEnv("Home", "http://10.0.60.60:5380", "secret")
 
-    expect(setServerConfig).toHaveBeenCalledWith("http://10.0.60.60:5380", "secret-token")
-    expect(store.isConfigured).toBe(true)
-    expect(store.status).toBe("connected")
-    expect(store.serverDomain).toBe("dns.villa58.lan")
+    expect(createEnvironment).toHaveBeenCalledWith("Home", "http://10.0.60.60:5380", "secret")
+    expect(listEnvironments).toHaveBeenCalled()
+    expect(store.environments).toEqual([ENV])
   })
 
-  it("shows a readable error, not a raw stack trace, when saving invalid connection details fails", async () => {
-    vi.mocked(setServerConfig).mockRejectedValue(new AppApiError("Invalid token or session expired.", 400))
+  it("surfaces a readable error when the status endpoint fails", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV], managed: false })
+    vi.mocked(getStatus).mockRejectedValue(new AppApiError("Not authenticated", 401))
     const store = useConnectionStore()
 
-    await store.setConfig("http://10.0.60.60:5380", "wrong-token")
+    await store.loadEnvironments()
 
     expect(store.status).toBe("error")
-    expect(store.error).toBe("Invalid token or session expired.")
-    expect(store.isConfigured).toBe(false)
+    expect(store.error).toBe("Not authenticated")
+  })
+
+  it("does not let a stale status response overwrite the newly selected environment", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ environments: [ENV, ENV2], managed: false })
+    let resolveFirst!: (v: Awaited<ReturnType<typeof getStatus>>) => void
+    vi.mocked(getStatus)
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r }))
+      .mockResolvedValueOnce({ configured: true, connected: true, serverDomain: "dns.office.lan", serverVersion: "15.4" })
+    const store = useConnectionStore()
+
+    // Start loading; env 1's status request stays pending.
+    const loading = store.loadEnvironments()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(store.activeEnvId).toBe(1)
+    expect(getStatus).toHaveBeenCalledWith(1)
+
+    // Switch to env 2, whose status resolves immediately.
+    await store.selectEnvironment(2)
+    expect(store.serverDomain).toBe("dns.office.lan")
+
+    // env 1's response finally arrives and must be dropped.
+    resolveFirst({ configured: true, connected: false, serverDomain: "dns.home.lan", serverVersion: "15.3" })
+    await loading
+
+    expect(store.activeEnvId).toBe(2)
+    expect(store.serverDomain).toBe("dns.office.lan")
+    expect(store.status).toBe("connected")
   })
 })

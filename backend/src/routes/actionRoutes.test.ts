@@ -11,7 +11,7 @@ function jsonResponse(body: unknown, status = 200) {
 function testApp(fetchImpl: typeof fetch, configured = true) {
   const db = openDb({ path: ":memory:" });
   if (configured) {
-    db.prepare("UPDATE app_config SET base_url = ?, token = ? WHERE id = 1").run(
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Default', ?, ?)").run(
       "http://10.0.60.60:5380",
       "secret-token",
     );
@@ -298,5 +298,51 @@ describe("actionRoutes", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.error).toBe("Permission denied.");
+  });
+});
+
+describe("server isolation for mutating actions", () => {
+  function twoServerApp(fetchImpl: typeof fetch) {
+    const db = openDb({ path: ":memory:" });
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Home', ?, ?)").run("http://10.0.60.60:5380", "home-token");
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Office', ?, ?)").run("http://10.0.70.70:5380", "office-token");
+    const app = express();
+    app.use(express.json());
+    app.use("/api/actions", actionRoutes(db, { fetchImpl }));
+    return { app, db };
+  }
+
+  it("a mutation targets the environment named by ?env= and never another server", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ status: "ok" }));
+    const { app } = twoServerApp(fetchImpl);
+
+    const res = await request(app).post("/api/actions/flush-cache").query({ env: "2" });
+
+    expect(res.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = fetchImpl.mock.calls[0]!;
+    expect(String(calledUrl)).toBe("http://10.0.70.70:5380/api/cache/flush");
+    expect(new Headers(calledInit?.headers).get("Authorization")).toBe("Bearer office-token");
+  });
+
+  it("requires an explicit env when more than one server is configured", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ status: "ok" }));
+    const { app } = twoServerApp(fetchImpl);
+
+    const res = await request(app).post("/api/actions/flush-cache");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Multiple servers");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("404s for an env id that does not exist, without calling upstream", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ status: "ok" }));
+    const { app } = twoServerApp(fetchImpl);
+
+    const res = await request(app).post("/api/actions/flush-cache").query({ env: "99" });
+
+    expect(res.status).toBe(404);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

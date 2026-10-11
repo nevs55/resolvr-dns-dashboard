@@ -1,5 +1,6 @@
 import type { StatsDuration } from "../api/technitium"
 import { durationToRange, type DateRange } from "./dateRange"
+import { getActiveEnvironmentId } from "./activeEnv"
 
 // Pure helpers behind the Overview charts. Nothing here touches the DOM
 // or the network, so the geometry and bucketing rules are unit-tested
@@ -356,10 +357,14 @@ const cache = new Map<string, { at: number; value: unknown }>()
 // not re-run heavy requests (a 5,000-entry log sample, a week of stats).
 // `force` skips the cached value, for the manual refresh button.
 export async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, force = false): Promise<T> {
-  const hit = cache.get(key)
+  // Scope the cache to the active environment, so switching servers never
+  // serves one server's cached result for another.
+  const env = getActiveEnvironmentId()
+  const scopedKey = env === undefined ? key : `${env}:${key}`
+  const hit = cache.get(scopedKey)
   if (!force && hit && Date.now() - hit.at < ttlMs) return hit.value as T
   const value = await fn()
-  cache.set(key, { at: Date.now(), value })
+  cache.set(scopedKey, { at: Date.now(), value })
   return value
 }
 

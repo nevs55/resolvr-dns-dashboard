@@ -73,12 +73,19 @@ export function cleanTechnitiumUrl(url: string): string | null {
   }
 }
 
-// Writes the add-on's URL and token into the connection config on every
+// Writes the add-on's URL and token into the (single) environment on every
 // start, so the options are always the source of truth when they are set.
+// The add-on is single-server by design — it manages one environment only.
 export function applyAddonOptions(db: Database, addon: AddonMode): { ok: boolean; error?: string } {
   if (!addon.managed) return { ok: true };
   const url = cleanTechnitiumUrl(addon.options.technitium_url ?? "");
   if (!url) return { ok: false, error: "technitium_url must be a web address starting with http:// or https://" };
-  db.prepare("UPDATE app_config SET base_url = ?, token = ? WHERE id = 1").run(url, (addon.options.technitium_token ?? "").trim());
+  const token = (addon.options.technitium_token ?? "").trim();
+  const existing = db.prepare("SELECT id FROM environments ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+  if (existing) {
+    db.prepare("UPDATE environments SET base_url = ?, token = ? WHERE id = ?").run(url, token, existing.id);
+  } else {
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES (?, ?, ?)").run("Default", url, token);
+  }
   return { ok: true };
 }

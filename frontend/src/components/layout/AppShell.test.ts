@@ -23,6 +23,11 @@ vi.mock("../../api/app", async () => {
   return {
     ...actual,
     getStatus: vi.fn().mockResolvedValue({ configured: false, connected: false, serverDomain: null, serverVersion: null }),
+    listEnvironments: vi.fn().mockResolvedValue({
+      environments: [{ id: 1, name: "Home", baseUrl: "http://10.0.60.60:5380" }],
+      managed: false,
+    }),
+    getOverview: vi.fn().mockResolvedValue({ window: "LastHour", environments: [] }),
   }
 })
 
@@ -33,10 +38,12 @@ function flushPromises() {
 }
 
 function makeRouter() {
-  const routes = navSections
-    .flatMap((s) => s.items)
-    .map((item) => ({ path: item.to, component: item.to === "/" ? OverviewView : ClientsView }))
-  routes.push({ path: "/connect", component: ClientsView })
+  const routes = navSections.flatMap((s) => s.items).map((item) => ({
+    path: item.scoped ? `/env/1/${item.name}` : item.name === "overview-all" ? "/" : `/${item.name}`,
+    name: item.name,
+    component: item.name === "overview-all" ? OverviewView : ClientsView,
+  }))
+  routes.push({ path: "/connect", name: "connect", component: ClientsView })
   return createRouter({ history: createMemoryHistory(), routes })
 }
 
@@ -57,6 +64,11 @@ describe("AppShell", () => {
     vi.mocked(getStatus)
       .mockReset()
       .mockResolvedValue({ configured: false, connected: false, serverDomain: null, serverVersion: null })
+    // Seed an active environment so the scoped nav items render without
+    // waiting for the (async) loadEnvironments() call to resolve.
+    const connection = useConnectionStore()
+    connection.environments = [{ id: 1, name: "Home", baseUrl: "http://10.0.60.60:5380" }]
+    connection.activeEnvId = 1
   })
 
   it("renders a nav link for every sidebar item in the approved wireframe, when signed in as admin", async () => {
@@ -155,7 +167,7 @@ describe("AppShell", () => {
     signInAsAdmin()
     const router = makeRouter()
     const wrapper = mount(AppShell, { global: { plugins: [router] } })
-    await router.push("/clients")
+    await router.push("/env/1/clients")
     await router.isReady()
     await wrapper.vm.$nextTick()
 
@@ -216,7 +228,7 @@ describe("AppShell", () => {
       serverVersion: "15.4",
     })
     const router = makeRouter()
-    await router.push("/clients") // not /connect
+    await router.push("/env/1/clients") // not /connect
 
     const wrapper = mount(AppShell, { global: { plugins: [router] } })
     await router.isReady()

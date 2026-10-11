@@ -16,11 +16,12 @@ export function usePreviousStats() {
   const connection = useConnectionStore()
   const timeRange = useTimeRangeStore()
   const prevStats = ref<Stats | null>(null)
-  let cache: { duration: string; at: number; stats: Stats | null } | null = null
+  let cache: { duration: string; envId: number | undefined; at: number; stats: Stats | null } | null = null
 
   async function loadPrevious(): Promise<Stats | null> {
     const duration = timeRange.selected
-    if (cache && cache.duration === duration && Date.now() - cache.at < PREV_TTL_MS) {
+    const envId = connection.credentials.envId
+    if (cache && cache.duration === duration && cache.envId === envId && Date.now() - cache.at < PREV_TTL_MS) {
       prevStats.value = cache.stats
       return cache.stats
     }
@@ -34,7 +35,7 @@ export function usePreviousStats() {
         // Left as null.
       }
     }
-    cache = { duration, at: Date.now(), stats: result }
+    cache = { duration, envId, at: Date.now(), stats: result }
     prevStats.value = result
     return result
   }

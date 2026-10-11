@@ -3,6 +3,7 @@
 // are entirely separate from the Technitium proxy in technitium.ts:
 // nothing here ever talks to the DNS server directly.
 import { resolveBackendUrl } from "../lib/backendUrl"
+import { getActiveEnvironmentId } from "../lib/activeEnv"
 
 const BACKEND_URL = resolveBackendUrl()
 
@@ -71,19 +72,53 @@ export function fetchMe(): Promise<CurrentUser> {
   return call("/api/auth/me")
 }
 
-export function getStatus(): Promise<ServerStatus> {
-  return call("/api/status")
+export function getStatus(envId?: number): Promise<ServerStatus> {
+  const q = envId !== undefined ? `?env=${envId}` : ""
+  return call(`/api/status${q}`)
 }
 
-export function getServerConfig(): Promise<{ baseUrl: string; token: string; managed?: boolean }> {
-  return call("/api/config")
+export interface EnvironmentSummary {
+  id: number
+  name: string
+  baseUrl: string
 }
 
-export function setServerConfig(
+export function listEnvironments(): Promise<{ environments: EnvironmentSummary[]; managed: boolean }> {
+  return call("/api/environments")
+}
+
+export function createEnvironment(
+  name: string,
   baseUrl: string,
   token: string,
-): Promise<{ status: string; serverDomain: string; serverVersion: string }> {
-  return call("/api/config", { method: "PUT", body: JSON.stringify({ baseUrl, token }) })
+): Promise<{ environment: EnvironmentSummary; serverDomain: string; serverVersion: string }> {
+  return call("/api/environments", { method: "POST", body: JSON.stringify({ name, baseUrl, token }) })
+}
+
+export function updateEnvironment(
+  id: number,
+  fields: { name?: string; baseUrl?: string; token?: string },
+): Promise<{ environment: EnvironmentSummary; serverDomain: string; serverVersion: string }> {
+  return call(`/api/environments/${id}`, { method: "PUT", body: JSON.stringify(fields) })
+}
+
+export function deleteEnvironment(id: number): Promise<{ status: string }> {
+  return call(`/api/environments/${id}`, { method: "DELETE" })
+}
+
+export interface OverviewServer {
+  id: number
+  name: string
+  connected: boolean
+  serverDomain: string | null
+  serverVersion: string | null
+  totalQueries: number | null
+  totalBlocked: number | null
+  error: string | null
+}
+
+export function getOverview(): Promise<{ window: string; environments: OverviewServer[] }> {
+  return call("/api/overview")
 }
 
 export function listUsers(): Promise<{ users: AppUser[] }> {
@@ -104,32 +139,38 @@ export function changeUserPassword(id: number, password: string): Promise<{ stat
 
 // Admin-only mutating actions — the one deliberate exception to this
 // dashboard's read-only design (see backend/src/routes/actionRoutes.ts).
+// Each targets the active environment via the `env` query parameter.
+function actionCall<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const env = getActiveEnvironmentId()
+  return call<T>(env === undefined ? path : `${path}?env=${env}`, init)
+}
+
 export function flushCache(): Promise<{ status: string }> {
-  return call("/api/actions/flush-cache", { method: "POST" })
+  return actionCall("/api/actions/flush-cache", { method: "POST" })
 }
 
 export function forceUpdateBlockLists(): Promise<{ status: string }> {
-  return call("/api/actions/update-block-lists", { method: "POST" })
+  return actionCall("/api/actions/update-block-lists", { method: "POST" })
 }
 
 export function revokeSession(partialToken: string): Promise<{ status: string }> {
-  return call("/api/actions/revoke-session", { method: "POST", body: JSON.stringify({ partialToken }) })
+  return actionCall("/api/actions/revoke-session", { method: "POST", body: JSON.stringify({ partialToken }) })
 }
 
 export function updateBlockListUrls(urls: string[]): Promise<{ status: string }> {
-  return call("/api/actions/block-list-urls", { method: "PUT", body: JSON.stringify({ urls }) })
+  return actionCall("/api/actions/block-list-urls", { method: "PUT", body: JSON.stringify({ urls }) })
 }
 
 export function blockDomain(domain: string): Promise<{ status: string }> {
-  return call("/api/actions/block-domain", { method: "POST", body: JSON.stringify({ domain }) })
+  return actionCall("/api/actions/block-domain", { method: "POST", body: JSON.stringify({ domain }) })
 }
 
 export function unblockDomain(domain: string): Promise<{ status: string }> {
-  return call("/api/actions/unblock-domain", { method: "POST", body: JSON.stringify({ domain }) })
+  return actionCall("/api/actions/unblock-domain", { method: "POST", body: JSON.stringify({ domain }) })
 }
 
 export function uninstallApp(name: string): Promise<{ status: string }> {
-  return call("/api/actions/uninstall-app", { method: "POST", body: JSON.stringify({ name }) })
+  return actionCall("/api/actions/uninstall-app", { method: "POST", body: JSON.stringify({ name }) })
 }
 
 // Host-to-IP mapping (the AdGuard "DNS rewrites" equivalent) — see
@@ -137,7 +178,7 @@ export function uninstallApp(name: string): Promise<{ status: string }> {
 // followed by a record add, mirroring the one-zone-per-hostname
 // pattern already used on this server.
 export function createZone(zone: string): Promise<{ status: string }> {
-  return call("/api/actions/create-zone", { method: "POST", body: JSON.stringify({ zone }) })
+  return actionCall("/api/actions/create-zone", { method: "POST", body: JSON.stringify({ zone }) })
 }
 
 export function addRecord(params: {
@@ -147,9 +188,9 @@ export function addRecord(params: {
   ipAddress: string
   ttl?: number
 }): Promise<{ status: string }> {
-  return call("/api/actions/add-record", { method: "POST", body: JSON.stringify(params) })
+  return actionCall("/api/actions/add-record", { method: "POST", body: JSON.stringify(params) })
 }
 
 export function deleteZone(zone: string): Promise<{ status: string }> {
-  return call("/api/actions/delete-zone", { method: "POST", body: JSON.stringify({ zone }) })
+  return actionCall("/api/actions/delete-zone", { method: "POST", body: JSON.stringify({ zone }) })
 }

@@ -1,4 +1,5 @@
-import { createRouter, createWebHistory } from "vue-router"
+import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router"
+import type { Component } from "vue"
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -10,6 +11,7 @@ declare module "vue-router" {
   }
 }
 
+import GlobalOverviewView from "../views/overview/GlobalOverviewView.vue"
 import OverviewView from "../views/overview/OverviewView.vue"
 import ClientsView from "../views/monitoring/ClientsView.vue"
 import QueryLogsView from "../views/monitoring/QueryLogsView.vue"
@@ -27,30 +29,43 @@ import ConnectView from "../views/connection/ConnectView.vue"
 import LoginView from "../views/auth/LoginView.vue"
 import { useAuthStore } from "../stores/auth"
 
-// One route per sidebar item in the approved wireframe
-// (https://claude.ai/artifact/KkUP4PePeDz4kVDA7ULDpM). All render inside
-// AppShell's <router-view>, so the sidebar/topbar chrome never remounts
-// between pages. Views live under src/views/<feature-area>/, mirroring
-// the sidebar's nav sections (see components/layout/navSections.ts).
+// Every per-server page lives under /env/:envId/..., so each environment has
+// its own URL, browser history, and deep-linkable views. The top-level `/`
+// is the global overview across all servers. Connection Settings manages the
+// whole list and stays unscoped.
+//
 // The page may be served under a path prefix (Home Assistant ingress); the
 // server writes that prefix into <base href>, so routes are relative to it.
 const routerBase = typeof document !== "undefined" ? new URL(document.baseURI).pathname : "/"
 
+function envRoutes(): RouteRecordRaw[] {
+  // (path segment, route name, component) triples mirroring the sidebar.
+  const defs: [string, string, Component][] = [
+    ["overview", "overview", OverviewView],
+    ["clients", "clients", ClientsView],
+    ["logs", "logs", QueryLogsView],
+    ["cache", "cache", CacheView],
+    ["zones", "zones", ZonesView],
+    ["allowed", "allowed", AllowedZonesView],
+    ["blocked", "blocked", BlockedZonesView],
+    ["dhcp", "dhcp", DhcpView],
+    ["resolver", "resolver", ResolverView],
+    ["apps", "apps", AppsView],
+    ["server", "server", ServerInfoView],
+    ["sessions", "sessions", SessionsView],
+  ]
+  return defs.map(([segment, name, component]) => ({
+    path: `/env/:envId/${segment}`,
+    name,
+    component,
+  }))
+}
+
 export const router = createRouter({
   history: createWebHistory(routerBase),
   routes: [
-    { path: "/", name: "overview", component: OverviewView },
-    { path: "/clients", name: "clients", component: ClientsView },
-    { path: "/logs", name: "logs", component: QueryLogsView },
-    { path: "/cache", name: "cache", component: CacheView },
-    { path: "/zones", name: "zones", component: ZonesView },
-    { path: "/allowed", name: "allowed", component: AllowedZonesView },
-    { path: "/blocked", name: "blocked", component: BlockedZonesView },
-    { path: "/dhcp", name: "dhcp", component: DhcpView },
-    { path: "/resolver", name: "resolver", component: ResolverView },
-    { path: "/apps", name: "apps", component: AppsView },
-    { path: "/server", name: "server", component: ServerInfoView },
-    { path: "/sessions", name: "sessions", component: SessionsView },
+    { path: "/", name: "overview-all", component: GlobalOverviewView },
+    ...envRoutes(),
     { path: "/users", name: "users", component: UsersView, meta: { requiresAdmin: true, localAccountsOnly: true } },
     { path: "/connect", name: "connect", component: ConnectView, meta: { requiresAdmin: true } },
     { path: "/login", name: "login", component: LoginView, meta: { public: true } },

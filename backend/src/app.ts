@@ -2,12 +2,13 @@ import express, { type Express, type Request, type Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { isAllowedPath } from "./proxyAllowlist.js";
-import { openDb, type AppConfigRow } from "./db.js";
+import { openDb } from "./db.js";
 import { attachUser, requireAuth, requireAdmin } from "./auth.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { userRoutes } from "./routes/userRoutes.js";
-import { configRoutes, statusRoute } from "./routes/configRoutes.js";
+import { environmentsRoutes, statusRoute, overviewRoute } from "./routes/configRoutes.js";
 import { actionRoutes } from "./routes/actionRoutes.js";
+import { resolveEnvironment, validateBaseUrl } from "./environments.js";
 import { serveFrontend } from "./frontend.js";
 import type { AddonMode } from "./addon.js";
 
@@ -68,22 +69,38 @@ export function createApp(options: CreateAppOptions = {}): Express {
   } else {
     app.use("/api/users", requireAdmin, userRoutes(db));
   }
-  app.use("/api/config", requireAdmin, configRoutes(db, { fetchImpl, managed: options.addon?.managed ?? false }));
+  // The environment list is available to any signed-in role (the switcher
+  // needs it); create/update/delete are gated to admin inside the router.
+  app.use("/api/environments", requireAuth, environmentsRoutes(db, { fetchImpl, managed: options.addon?.managed ?? false }));
   app.get("/api/status", requireAuth, statusRoute(db, { fetchImpl }));
+  app.get("/api/overview", requireAuth, overviewRoute(db, { fetchImpl }));
   app.use("/api/actions", requireAdmin, actionRoutes(db, { fetchImpl }));
 
   app.all("/api/technitium/*splat", requireAuth, async (req: Request, res: Response) => {
-    const config = db.prepare("SELECT base_url, token FROM app_config WHERE id = 1").get() as AppConfigRow;
-    const baseUrl = config.base_url;
-    const token = config.token;
-
-    if (!baseUrl || !token) {
-      res.status(400).json({ error: "No Technitium server is configured yet — ask an admin to set one up." });
+    if (req.method !== "GET") {
+      res.status(403).json({ error: "Only GET requests are allowed through this proxy" });
       return;
     }
 
-    if (req.method !== "GET") {
-      res.status(403).json({ error: "Only GET requests are allowed through this proxy" });
+    // The target environment is named by the `env` query parameter, never
+    // by a client-supplied URL — a caller can only select one of the
+    // admin-configured environments.
+    const resolved = resolveEnvironment(db, req.query.env);
+    if (!resolved.ok) {
+      res.status(resolved.status).json({ error: resolved.error });
+      return;
+    }
+    const env = resolved.env;
+    if (!env.base_url || !env.token) {
+      res.status(400).json({ error: "No Technitium server is configured yet — ask an admin to set one up." });
+      return;
+    }
+    // Defense in depth: re-validate the stored URL before using it as a
+    // fetch target, so a value that slipped past validation at write time
+    // still cannot redirect the proxy to a non-http(s) destination.
+    const baseUrl = validateBaseUrl(env.base_url);
+    if (!baseUrl) {
+      res.status(502).json({ error: `Invalid configured server URL: ${env.base_url}` });
       return;
     }
 
@@ -102,12 +119,13 @@ export function createApp(options: CreateAppOptions = {}): Express {
       return;
     }
     for (const [key, value] of Object.entries(req.query)) {
+      if (key === "env") continue; // our routing parameter, never forwarded upstream
       if (typeof value === "string") target.searchParams.set(key, value);
     }
 
     try {
       const upstreamRes = await fetchImpl(target, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${env.token}` },
       });
       const body = await upstreamRes.text();
       const contentType = upstreamRes.headers.get("content-type") ?? "application/json";

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue"
+import { envRoute } from "../../lib/envRoute"
 
 const props = defineProps<{
   title: string
@@ -14,6 +15,10 @@ const props = defineProps<{
 
 const max = computed(() => Math.max(1, ...props.items.map((i) => i.hits)))
 const barColor = { accent: "rgb(var(--color-accent))", ok: "rgb(var(--color-ok))", crit: "rgb(var(--color-crit))" }
+
+function logLink(item: { name: string }): ReturnType<typeof envRoute> {
+  return envRoute("logs", { [props.filterKey]: item.name })
+}
 </script>
 
 <template>
@@ -24,7 +29,7 @@ const barColor = { accent: "rgb(var(--color-accent))", ok: "rgb(var(--color-ok))
       <router-link
         v-for="item in items"
         :key="item.name"
-        :to="{ path: '/logs', query: { [filterKey]: item.name } }"
+        :to="logLink(item)"
         :title="filterKey === 'client' ? 'View this client in Query Logs' : 'View this domain in Query Logs'"
         class="top-list-row block rounded px-1 py-0.5 -mx-1 text-xs transition-colors hover:bg-background-hover"
       >

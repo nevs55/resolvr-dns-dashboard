@@ -15,12 +15,16 @@ export type NavIconName =
   | "users"
 
 export interface NavItem {
-  to: string
+  // Vue Router route name (see router/index.ts).
+  name: string
   label: string
   icon: NavIconName
   adminOnly?: boolean
   // Hidden when Home Assistant does the signing in (there are no accounts to manage).
   localAccountsOnly?: boolean
+  // Scoped to the active environment: renders under /env/:envId/... and is
+  // hidden until an environment is selected.
+  scoped?: boolean
 }
 
 export interface NavSection {
@@ -29,35 +33,37 @@ export interface NavSection {
 }
 
 // Mirrors the sidebar structure in the approved wireframe
-// (https://claude.ai/artifact/KkUP4PePeDz4kVDA7ULDpM). `icon` matches
-// a case in components/layout/NavIcon.vue.
+// (https://claude.ai/artifact/KkUP4PePeDz4kVDA7ULDpM), extended with an
+// "All Servers" landing page for the global overview. `icon` matches a case
+// in components/layout/NavIcon.vue.
 export const navSections: NavSection[] = [
-  { label: null, items: [{ to: "/", label: "Overview", icon: "overview" }] },
+  { label: null, items: [{ name: "overview-all", label: "All Servers", icon: "overview" }] },
   {
     label: "Monitoring",
     items: [
-      { to: "/clients", label: "Clients", icon: "clients" },
-      { to: "/logs", label: "Query Logs", icon: "logs" },
-      { to: "/cache", label: "Cache", icon: "cache" },
+      { name: "overview", label: "Overview", icon: "overview", scoped: true },
+      { name: "clients", label: "Clients", icon: "clients", scoped: true },
+      { name: "logs", label: "Query Logs", icon: "logs", scoped: true },
+      { name: "cache", label: "Cache", icon: "cache", scoped: true },
     ],
   },
   {
     label: "DNS Zones",
     items: [
-      { to: "/zones", label: "Zones", icon: "zones" },
-      { to: "/allowed", label: "Allowed Zones", icon: "allowed" },
-      { to: "/blocked", label: "Blocked Zones", icon: "blocked" },
+      { name: "zones", label: "Zones", icon: "zones", scoped: true },
+      { name: "allowed", label: "Allowed Zones", icon: "allowed", scoped: true },
+      { name: "blocked", label: "Blocked Zones", icon: "blocked", scoped: true },
     ],
   },
-  { label: "Network", items: [{ to: "/dhcp", label: "DHCP", icon: "dhcp" }] },
-  { label: "Tools", items: [{ to: "/resolver", label: "DNS Resolver", icon: "resolver" }] },
+  { label: "Network", items: [{ name: "dhcp", label: "DHCP", icon: "dhcp", scoped: true }] },
+  { label: "Tools", items: [{ name: "resolver", label: "DNS Resolver", icon: "resolver", scoped: true }] },
   {
     label: "System",
     items: [
-      { to: "/apps", label: "Apps", icon: "apps" },
-      { to: "/server", label: "Server Info", icon: "server" },
-      { to: "/sessions", label: "Sessions", icon: "sessions" },
-      { to: "/users", label: "Users", icon: "users", adminOnly: true, localAccountsOnly: true },
+      { name: "apps", label: "Apps", icon: "apps", scoped: true },
+      { name: "server", label: "Server Info", icon: "server", scoped: true },
+      { name: "sessions", label: "Sessions", icon: "sessions", scoped: true },
+      { name: "users", label: "Users", icon: "users", adminOnly: true, localAccountsOnly: true },
     ],
   },
 ]

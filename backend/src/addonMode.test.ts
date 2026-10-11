@@ -47,7 +47,7 @@ describe("add-on mode: sign-in through Home Assistant", () => {
   });
 
   it("lets the ingress user reach admin-only routes", async () => {
-    const res = await request(make(addon())).get("/api/config");
+    const res = await request(make(addon())).get("/api/environments");
     expect(res.status).toBe(200);
   });
 
@@ -61,21 +61,22 @@ describe("add-on mode: sign-in through Home Assistant", () => {
 describe("add-on mode: the Technitium connection", () => {
   it("hides the token and refuses changes while the add-on options set the connection", async () => {
     const db = openDb({ path: ":memory:", seedAdmin: null });
-    db.prepare("UPDATE app_config SET base_url = 'http://dns.example.lan:5380', token = 'secret' WHERE id = 1").run();
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Default', 'http://dns.example.lan:5380', 'secret')").run();
     const app = createApp({ db, addon: addon({ managed: true }) });
 
-    const get = await request(app).get("/api/config");
-    expect(get.body).toEqual({ baseUrl: "http://dns.example.lan:5380", token: "", managed: true });
+    const get = await request(app).get("/api/environments");
+    expect(get.body.managed).toBe(true);
+    expect(get.body.environments).toEqual([{ id: 1, name: "Default", baseUrl: "http://dns.example.lan:5380" }]);
     expect(JSON.stringify(get.body)).not.toContain("secret");
 
-    const put = await request(app).put("/api/config").send({ baseUrl: "http://other", token: "x" });
+    const put = await request(app).put("/api/environments/1").send({ name: "Other" });
     expect(put.status).toBe(409);
     expect(put.body.error).toContain("Configuration tab");
-    expect(db.prepare("SELECT base_url FROM app_config WHERE id = 1").get()).toEqual({ base_url: "http://dns.example.lan:5380" });
+    expect(db.prepare("SELECT base_url FROM environments WHERE id = 1").get()).toEqual({ base_url: "http://dns.example.lan:5380" });
   });
 
   it("allows setting it from the page when the add-on options are empty", async () => {
-    const res = await request(make(addon({ managed: false }))).get("/api/config");
+    const res = await request(make(addon({ managed: false }))).get("/api/environments");
     expect(res.body.managed).toBe(false);
   });
 
@@ -84,7 +85,7 @@ describe("add-on mode: the Technitium connection", () => {
     const app = createApp({ db });
     const agent = request.agent(app);
     await agent.post("/api/auth/login").send({ username: "admin", password: "adminpass1" });
-    expect((await agent.get("/api/config")).body.managed).toBe(false);
+    expect((await agent.get("/api/environments")).body.managed).toBe(false);
     expect((await agent.get("/api/users")).status).toBe(200);
   });
 });

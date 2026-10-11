@@ -1,4 +1,5 @@
 import type { ResolveResult } from "../api/technitium"
+import { envScopedKey } from "./activeEnv"
 
 // Pure logic behind the Blocked Zones page: the block-list feed editor,
 // domain validation, the "check a domain" verdict, and the history of how
@@ -265,7 +266,7 @@ const HISTORY_MAX = 30
 
 export function readHistory(): Reading[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]")
+    const raw = JSON.parse(localStorage.getItem(envScopedKey(HISTORY_KEY)) ?? "[]")
     return Array.isArray(raw) ? raw.filter((r): r is Reading => typeof r?.t === "number" && typeof r?.total === "number") : []
   } catch {
     return []
@@ -281,7 +282,7 @@ export function recordReading(total: number, now: number = Date.now(), force = f
   if (last && last.total === total && !force) return history
   const next = [...history, { t: now, total }].slice(-HISTORY_MAX)
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+    localStorage.setItem(envScopedKey(HISTORY_KEY), JSON.stringify(next))
   } catch {
     // Storage blocked: the history just is not kept.
   }

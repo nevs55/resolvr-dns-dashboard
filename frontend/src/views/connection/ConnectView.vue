@@ -1,124 +1,119 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue"
 import { useConnectionStore } from "../../stores/connection"
-import { getServerConfig } from "../../api/app"
+import { AppApiError } from "../../api/app"
 
 const connection = useConnectionStore()
-const baseUrlInput = ref("")
-const tokenInput = ref("")
-// Set when the connection comes from the Home Assistant add-on's
-// Configuration tab, which then owns it.
-const managed = ref(false)
 
-// Loads the currently saved connection details (this page is
-// admin-only — see the router guard — so it's safe to fetch the raw
-// token here) to prefill the form for editing.
+const managed = ref(false)
+const nameInput = ref("")
+const urlInput = ref("")
+const tokenInput = ref("")
+const formError = ref<string | null>(null)
+const editingId = ref<number | null>(null)
+const editName = ref("")
+const editUrl = ref("")
+const editToken = ref("")
+const editError = ref<string | null>(null)
+
 onMounted(async () => {
-  try {
-    const config = await getServerConfig()
-    baseUrlInput.value = config.baseUrl
-    tokenInput.value = config.token
-    managed.value = config.managed === true
-  } catch {
-    // No config saved yet, or it couldn't be loaded — leave the form
-    // blank rather than blocking the page on it.
-  }
+  await connection.loadEnvironments()
+  managed.value = connection.managed
 })
 
-async function onTestConnection() {
-  await connection.setConfig(baseUrlInput.value, tokenInput.value)
+async function onAdd(): Promise<void> {
+  formError.value = null
+  try {
+    await connection.createEnv(nameInput.value, urlInput.value, tokenInput.value)
+    nameInput.value = ""
+    urlInput.value = ""
+    tokenInput.value = ""
+  } catch (err) {
+    formError.value = err instanceof AppApiError ? err.message : "Could not add the server."
+  }
 }
 
-// AppShell.vue re-validates the saved connection on mount (it's always
-// mounted, unlike this view) — no need to duplicate that here, which
-// would just double the request when the user is actually on this page.
+function startEdit(id: number, name: string, baseUrl: string): void {
+  editingId.value = id
+  editName.value = name
+  editUrl.value = baseUrl
+  editToken.value = ""
+  editError.value = null
+}
+
+async function onSave(id: number): Promise<void> {
+  editError.value = null
+  try {
+    await connection.updateEnv(id, {
+      name: editName.value,
+      baseUrl: editUrl.value,
+      token: editToken.value !== "" ? editToken.value : undefined,
+    })
+    editingId.value = null
+  } catch (err) {
+    editError.value = err instanceof AppApiError ? err.message : "Could not save the server."
+  }
+}
+
+async function onDelete(id: number): Promise<void> {
+  if (!window.confirm("Remove this server? Its monitoring pages will stop working.")) return
+  await connection.deleteEnv(id)
+}
 </script>
 
 <template>
-  <main class="max-w-xl px-6 py-16">
-    <h1 class="text-2xl font-semibold tracking-tight">Connection Settings</h1>
+  <main class="max-w-2xl px-6 py-16">
+    <h1 class="text-2xl font-semibold tracking-tight">Servers</h1>
     <p class="mt-1 text-sm text-gray-500">
-      Point Resolvr at your Technitium DNS Server &mdash; saved here for everyone who signs into this
-      dashboard, not just this browser.
+      Manage the Technitium servers Resolvr monitors. Each one gets the full set of pages, plus its own switcher entry.
     </p>
 
     <div v-if="managed" id="connection-managed" class="mt-8 rounded-lg border border-border bg-background-card px-4 py-3.5 text-sm">
-      <div class="text-xs font-semibold text-gray-500">Server URL</div>
-      <div class="mt-0.5 font-mono">{{ baseUrlInput }}</div>
-      <p class="mt-3 text-gray-500">
-        This connection is set in the add-on's <b class="text-fg">Configuration</b> tab in Home Assistant, together with the API token.
-        Change it there and restart the add-on.
-      </p>
+      This connection is set in the add-on's <b class="text-fg">Configuration</b> tab in Home Assistant, together with the API token.
+      Change it there and restart the add-on.
     </div>
 
-    <form v-else class="mt-8 flex flex-col gap-4" @submit.prevent="onTestConnection">
-      <div class="flex flex-col gap-1.5">
-        <label for="server-url" class="text-xs font-semibold text-gray-500">Server URL</label>
-        <input
-          id="server-url"
-          v-model="baseUrlInput"
-          type="text"
-          placeholder="http://10.0.60.60:5380"
-          class="w-full rounded-md border border-border bg-background-card px-3 py-2 font-mono text-sm text-fg focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-        />
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <label for="api-token" class="text-xs font-semibold text-gray-500">API token</label>
-        <input
-          id="api-token"
-          v-model="tokenInput"
-          type="password"
-          placeholder="Paste your Technitium API token"
-          class="w-full rounded-md border border-border bg-background-card px-3 py-2 font-mono text-sm text-fg focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-        />
-      </div>
-
-      <div class="flex items-center gap-3">
-        <button
-          id="test-connection"
-          type="submit"
-          :disabled="connection.status === 'testing'"
-          class="inline-flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2 text-sm font-medium text-white disabled:opacity-50"
+    <template v-else>
+      <ul v-if="connection.environments.length" id="server-list" class="mt-8 flex flex-col gap-2">
+        <li
+          v-for="env in connection.environments"
+          :key="env.id"
+          :id="`env-${env.id}`"
+          class="rounded-lg border border-border bg-background-card px-4 py-3"
         >
-          {{ connection.status === "testing" ? "Testing…" : "Test connection" }}
-        </button>
-
-        <span
-          v-if="connection.status === 'connected'"
-          class="inline-flex items-center gap-1.5 rounded-md bg-ok/12 px-2.5 py-1 text-xs font-semibold text-ok"
-        >
-          Connected &middot; {{ connection.serverDomain }} &middot; v{{ connection.serverVersion }}
-        </span>
-      </div>
-
-      <p
-        v-if="connection.status === 'error' && connection.error"
-        id="connection-error"
-        class="text-sm text-crit"
-      >
-        {{ connection.error }}
-      </p>
-    </form>
-
-    <div class="mt-8 max-w-[62ch] text-xs leading-relaxed text-gray-500">
-      <p>
-        Almost everything Resolvr does is read-only &mdash; dashboard stats, zone &amp; record
-        listings, query logs, cache, DHCP, apps and settings. It never edits a zone or record on your
-        DNS server.
-      </p>
-      <p class="mt-2">
-        A short, explicit list of admin-only actions is the exception, each a single confirmed call to
-        one specific Technitium endpoint, never a general write:
-      </p>
-      <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
-        <li>Flush the DNS cache</li>
-        <li>Force an immediate block-list update</li>
-        <li>Edit the block list source URLs, or block/unblock a specific domain</li>
-        <li>Revoke a session or API token</li>
-        <li>Uninstall a DNS app</li>
+          <template v-if="editingId !== env.id">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-semibold">{{ env.name }}</span>
+              <span class="truncate font-mono text-xs text-gray-500">{{ env.baseUrl }}</span>
+              <span class="ml-auto flex items-center gap-2">
+                <button type="button" :id="`edit-env-${env.id}`" class="text-xs font-semibold text-accent" @click="startEdit(env.id, env.name, env.baseUrl)">Edit</button>
+                <button type="button" :id="`delete-env-${env.id}`" class="text-xs font-semibold text-crit" @click="onDelete(env.id)">Delete</button>
+              </span>
+            </div>
+          </template>
+          <form v-else :id="`edit-form-${env.id}`" class="flex flex-col gap-2" @submit.prevent="onSave(env.id)">
+            <input :id="`edit-name-${env.id}`" v-model="editName" class="w-full rounded-md border border-border bg-background-card px-3 py-1.5 text-sm" />
+            <input :id="`edit-url-${env.id}`" v-model="editUrl" class="w-full rounded-md border border-border bg-background-card px-3 py-1.5 font-mono text-sm" />
+            <input :id="`edit-token-${env.id}`" v-model="editToken" type="password" placeholder="API token (leave blank to keep)" class="w-full rounded-md border border-border bg-background-card px-3 py-1.5 font-mono text-sm" />
+            <div class="flex items-center gap-2">
+              <button type="submit" :id="`save-env-${env.id}`" class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white">Save</button>
+              <button type="button" class="text-sm text-gray-500" @click="editingId = null">Cancel</button>
+            </div>
+            <p v-if="editError" class="text-sm text-crit">{{ editError }}</p>
+          </form>
+        </li>
       </ul>
-      <p class="mt-2">A Viewer account cannot do any of these &mdash; only read every monitoring page.</p>
-    </div>
+
+      <form id="add-env-form" class="mt-6 flex flex-col gap-3 rounded-lg border border-border bg-background-card px-4 py-4" @submit.prevent="onAdd">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Add a server</div>
+        <input id="env-name" v-model="nameInput" placeholder="Name (e.g. Home)" class="w-full rounded-md border border-border bg-background-canvas px-3 py-2 text-sm" />
+        <input id="env-url" v-model="urlInput" placeholder="http://10.0.60.60:5380" class="w-full rounded-md border border-border bg-background-canvas px-3 py-2 font-mono text-sm" />
+        <input id="env-token" v-model="tokenInput" type="password" placeholder="Technitium API token" class="w-full rounded-md border border-border bg-background-canvas px-3 py-2 font-mono text-sm" />
+        <div>
+          <button id="add-env" type="submit" :disabled="connection.status === 'testing'" class="rounded-md bg-accent px-3.5 py-2 text-sm font-medium text-white disabled:opacity-50">Add server</button>
+        </div>
+        <p v-if="formError" id="connection-error" class="text-sm text-crit">{{ formError }}</p>
+      </form>
+    </template>
   </main>
 </template>

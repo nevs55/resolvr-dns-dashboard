@@ -13,8 +13,13 @@ export const useSidebarCountsStore = defineStore("sidebarCounts", () => {
   const blockedZonesTotal = ref<number | null>(null)
   const appsTotal = ref<number | null>(null)
   const rateLimitedClients = ref<number>(0)
+  // The environment these counts were last requested for, so a stale batch
+  // that resolves after the user switched servers can be dropped.
+  let latestEnvId: number | undefined
 
   async function load(credentials: TechnitiumCredentials): Promise<void> {
+    const envId = credentials.envId
+    latestEnvId = envId
     const [zones, blocked, apps, rateLimited] = await Promise.allSettled([
       listZones(credentials, { pageNumber: 1, zonesPerPage: 1 }),
       listBlockedZones(credentials),
@@ -22,6 +27,7 @@ export const useSidebarCountsStore = defineStore("sidebarCounts", () => {
       getTopStats("TopClients", "LastDay", credentials, { onlyRateLimitedClients: true, limit: 1000 }),
     ])
 
+    if (envId !== latestEnvId) return
     zonesTotal.value = zones.status === "fulfilled" ? zones.value.response.totalZones : null
 
     if (blocked.status === "fulfilled") {

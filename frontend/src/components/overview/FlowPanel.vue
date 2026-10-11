@@ -2,6 +2,7 @@
 import { computed, ref } from "vue"
 import { useRouter } from "vue-router"
 import { fmtInt, labelYs, pct, stackNodes, type Flows } from "../../lib/charts"
+import { envRoute } from "../../lib/envRoute"
 import { useChartTip } from "../../composables/useChartTip"
 import ChartPanel from "../charts/ChartPanel.vue"
 import ChartTip from "../charts/ChartTip.vue"
@@ -95,11 +96,11 @@ const layout = computed(() => {
 const hot = ref<string | null>(null)
 
 function onPathClick(name: string): void {
-  if (name !== "Other") void router.push({ path: "/logs", query: { responseType: name } })
+  if (name !== "Other") void router.push(envRoute("logs", { responseType: name }))
 }
 function onOutClick(name: string): void {
   const q = OUT_FILTER[name]
-  if (q) void router.push({ path: "/logs", query: q })
+  if (q) void router.push(envRoute("logs", q))
 }
 </script>
 

@@ -62,26 +62,30 @@ describe("trusted peers", () => {
 });
 
 describe("applyAddonOptions", () => {
-  it("writes the add-on's URL and token into the connection config", () => {
+  it("writes the add-on's URL and token into the single environment", () => {
     const db = openDb({ path: ":memory:", seedAdmin: null });
     const addon = loadAddonMode({ ADDON_OPTIONS_FILE: writeOptions({ technitium_url: " http://dns.example.lan:5380/ ", technitium_token: " tok " }) })!;
     expect(applyAddonOptions(db, addon)).toEqual({ ok: true });
-    expect(db.prepare("SELECT base_url, token FROM app_config WHERE id = 1").get()).toEqual({ base_url: "http://dns.example.lan:5380", token: "tok" });
+    expect(db.prepare("SELECT name, base_url, token FROM environments WHERE id = 1").get()).toEqual({
+      name: "Default",
+      base_url: "http://dns.example.lan:5380",
+      token: "tok",
+    });
   });
 
   it("replaces an older value on the next start, so the options stay the source of truth", () => {
     const db = openDb({ path: ":memory:", seedAdmin: null });
-    db.prepare("UPDATE app_config SET base_url = 'http://old', token = 'old' WHERE id = 1").run();
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Default', 'http://old', 'old')").run();
     const addon = loadAddonMode({ ADDON_OPTIONS_FILE: writeOptions({ technitium_url: "https://new.example.lan", technitium_token: "new" }) })!;
     applyAddonOptions(db, addon);
-    expect(db.prepare("SELECT base_url FROM app_config WHERE id = 1").get()).toEqual({ base_url: "https://new.example.lan" });
+    expect(db.prepare("SELECT base_url FROM environments WHERE id = 1").get()).toEqual({ base_url: "https://new.example.lan" });
   });
 
   it("leaves the stored connection alone when the options are empty", () => {
     const db = openDb({ path: ":memory:", seedAdmin: null });
-    db.prepare("UPDATE app_config SET base_url = 'http://kept', token = 'kept' WHERE id = 1").run();
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Default', 'http://kept', 'kept')").run();
     expect(applyAddonOptions(db, loadAddonMode({ ADDON_OPTIONS_FILE: writeOptions({}) })!)).toEqual({ ok: true });
-    expect(db.prepare("SELECT token FROM app_config WHERE id = 1").get()).toEqual({ token: "kept" });
+    expect(db.prepare("SELECT token FROM environments WHERE id = 1").get()).toEqual({ token: "kept" });
   });
 
   it("refuses a URL that is not a web address, and says why", () => {
@@ -90,7 +94,7 @@ describe("applyAddonOptions", () => {
     const res = applyAddonOptions(db, addon);
     expect(res.ok).toBe(false);
     expect(res.error).toContain("http://");
-    expect(db.prepare("SELECT base_url FROM app_config WHERE id = 1").get()).toEqual({ base_url: "" });
+    expect(db.prepare("SELECT COUNT(*) as n FROM environments").get()).toEqual({ n: 0 });
   });
 
   it("cleans a URL, and rejects other schemes", () => {

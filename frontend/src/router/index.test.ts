@@ -18,18 +18,19 @@ describe("router auth guard", () => {
   it("redirects an unauthenticated visitor to /login, preserving the intended destination", async () => {
     vi.mocked(fetchMe).mockRejectedValue(new AppApiError("Not authenticated", 401))
 
-    await router.push("/zones")
+    await router.push("/env/1/zones")
 
-    expect(router.currentRoute.value.path).toBe("/login")
-    expect(router.currentRoute.value.query.redirect).toBe("/zones")
+    expect(router.currentRoute.value.name).toBe("login")
+    expect(router.currentRoute.value.query.redirect).toBe("/env/1/zones")
   })
 
-  it("lets an authenticated viewer through to a regular page", async () => {
+  it("lets an authenticated viewer through to a scoped page", async () => {
     vi.mocked(fetchMe).mockResolvedValue({ id: 2, username: "reader", role: "viewer" })
 
-    await router.push("/zones")
+    await router.push("/env/1/zones")
 
-    expect(router.currentRoute.value.path).toBe("/zones")
+    expect(router.currentRoute.value.name).toBe("zones")
+    expect(router.currentRoute.value.params.envId).toBe("1")
   })
 
   it("bounces a signed-in viewer away from an admin-only route (Connection Settings)", async () => {
@@ -57,6 +58,37 @@ describe("router auth guard", () => {
   })
 })
 
+describe("scoped routes", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(fetchMe).mockResolvedValue({ id: 1, username: "admin", role: "admin" })
+  })
+
+  it("resolves each per-server page under /env/:envId with the envId param", async () => {
+    await router.push("/env/2/logs")
+    expect(router.currentRoute.value.name).toBe("logs")
+    expect(router.currentRoute.value.params.envId).toBe("2")
+
+    await router.push("/env/3/clients")
+    expect(router.currentRoute.value.name).toBe("clients")
+    expect(router.currentRoute.value.params.envId).toBe("3")
+  })
+
+  it("serves the global overview at / as overview-all (unscoped)", async () => {
+    await router.push("/")
+    expect(router.currentRoute.value.name).toBe("overview-all")
+  })
+
+  it("keeps the same route name when switching environments, only changing envId", async () => {
+    await router.push("/env/1/overview")
+
+    await router.push({ name: "overview", params: { envId: "5" } })
+
+    expect(router.currentRoute.value.name).toBe("overview")
+    expect(router.currentRoute.value.params.envId).toBe("5")
+  })
+})
+
 describe("router when Home Assistant signs the user in", () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -65,7 +97,7 @@ describe("router when Home Assistant signs the user in", () => {
 
   it("keeps the user away from Users, which only makes sense with Resolvr's own accounts", async () => {
     vi.mocked(fetchMe).mockResolvedValue({ id: 0, username: "Bassem", role: "admin", external: true })
-    await router.push("/zones")
+    await router.push("/env/1/zones")
     await router.push("/users")
     expect(router.currentRoute.value.path).toBe("/")
   })
@@ -88,4 +120,3 @@ describe("router base", () => {
     base.remove()
   })
 })
-

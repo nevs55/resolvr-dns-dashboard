@@ -5,6 +5,7 @@ import { getDashboardStats, type DashboardStatsResult } from "../../api/techniti
 import { useConnectionStore } from "../../stores/connection"
 import { useRefreshStore } from "../../stores/refresh"
 import { bucketHeatmap, cached, fmtInt, lastOccurrence } from "../../lib/charts"
+import { envRoute } from "../../lib/envRoute"
 import { useChartTip } from "../../composables/useChartTip"
 import ChartPanel from "../charts/ChartPanel.vue"
 import ChartTip from "../charts/ChartTip.vue"
@@ -74,7 +75,7 @@ function hourLabel(h: number): string {
 
 function onClick(day: number, hour: number): void {
   const { start, end } = lastOccurrence(day, hour)
-  void router.push({ path: "/logs", query: { start, end } })
+  void router.push(envRoute("logs", { start, end }))
 }
 </script>
 

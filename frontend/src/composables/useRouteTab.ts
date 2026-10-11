@@ -1,5 +1,6 @@
 import { computed } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import { envScopedKey } from "../lib/activeEnv"
 
 // Which tab is open lives in the URL (?tab=), so a refresh or a shared link
 // lands on the same one, and falls back to the tab last used in this
@@ -10,7 +11,7 @@ export function useRouteTab<T extends string>(ids: readonly T[], storageKey: str
 
   function stored(): T | null {
     try {
-      const v = localStorage.getItem(storageKey)
+      const v = localStorage.getItem(envScopedKey(storageKey))
       return ids.find((id) => id === v) ?? null
     } catch {
       return null
@@ -21,7 +22,7 @@ export function useRouteTab<T extends string>(ids: readonly T[], storageKey: str
 
   function setTab(id: T): void {
     try {
-      localStorage.setItem(storageKey, id)
+      localStorage.setItem(envScopedKey(storageKey), id)
     } catch {
       // Not remembered; the URL still carries the choice.
     }

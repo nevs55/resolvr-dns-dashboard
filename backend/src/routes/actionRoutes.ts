@@ -1,15 +1,27 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Database } from "better-sqlite3";
 import { callTechnitiumAction } from "../technitiumAction.js";
-import type { AppConfigRow } from "../db.js";
+import { resolveEnvironment } from "../environments.js";
 
 export interface ActionRoutesOptions {
   fetchImpl?: typeof fetch;
 }
 
-function requireConfig(db: Database): AppConfigRow | null {
-  const config = db.prepare("SELECT base_url, token FROM app_config WHERE id = 1").get() as AppConfigRow;
-  return config.base_url && config.token ? config : null;
+// Resolves which environment a mutating action targets — from the `env`
+// request parameter, with the same single-server fallback as the read
+// proxy. Writes the error response itself and returns null on failure.
+function resolveConfig(db: Database, req: Request, res: Response): { base_url: string; token: string } | null {
+  const resolved = resolveEnvironment(db, req.query.env);
+  if (!resolved.ok) {
+    res.status(resolved.status).json({ error: resolved.error });
+    return null;
+  }
+  const env = resolved.env;
+  if (!env.base_url || !env.token) {
+    res.status(400).json({ error: "No Technitium server is configured yet." });
+    return null;
+  }
+  return { base_url: env.base_url, token: env.token };
 }
 
 // Admin-only mutating actions — the one deliberate exception to this
@@ -21,12 +33,9 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
   const fetchImpl = options.fetchImpl ?? fetch;
   const router = Router();
 
-  router.post("/flush-cache", async (_req, res) => {
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+  router.post("/flush-cache", async (req, res) => {
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(config.base_url, config.token, "/cache/flush", {}, fetchImpl);
     if (!result.ok) {
       res.status(502).json({ error: result.error });
@@ -35,12 +44,9 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
     res.json({ status: "ok" });
   });
 
-  router.post("/update-block-lists", async (_req, res) => {
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+  router.post("/update-block-lists", async (req, res) => {
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -74,11 +80,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "Feed entries cannot contain commas or line breaks." });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const value = urls.length === 0 ? "false" : urls.join(",");
     const result = await callTechnitiumAction(
       config.base_url,
@@ -105,11 +108,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "domain is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -130,11 +130,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "domain is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -159,11 +156,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "name is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -191,11 +185,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "zone is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -224,11 +215,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "ipAddress is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const params: Record<string, string> = { domain: domain.trim(), type, ipAddress: ipAddress.trim() };
     if (typeof zone === "string" && zone.trim()) params.zone = zone.trim();
     if (typeof ttl === "number" && ttl > 0) params.ttl = String(ttl);
@@ -246,11 +234,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "zone is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,
@@ -271,11 +256,8 @@ export function actionRoutes(db: Database, options: ActionRoutesOptions = {}): R
       res.status(400).json({ error: "partialToken is required" });
       return;
     }
-    const config = requireConfig(db);
-    if (!config) {
-      res.status(400).json({ error: "No Technitium server is configured yet." });
-      return;
-    }
+    const config = resolveConfig(db, req, res);
+    if (!config) return;
     const result = await callTechnitiumAction(
       config.base_url,
       config.token,

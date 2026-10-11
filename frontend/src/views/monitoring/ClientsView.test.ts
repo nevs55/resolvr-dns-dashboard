@@ -14,6 +14,7 @@ import { useTimeRangeStore } from "../../stores/timeRange"
 import { useRefreshStore } from "../../stores/refresh"
 import { clearCache } from "../../lib/charts"
 import { resetKnownForTests } from "../../lib/clients"
+import { setActiveEnvironmentId } from "../../lib/activeEnv"
 import ClientsView from "./ClientsView.vue"
 
 const statsResult = {
@@ -50,7 +51,7 @@ async function mountView() {
     routes: [
       { path: "/clients", component: ClientsView },
       { path: "/connect", component: { template: "<div>connect</div>" } },
-      { path: "/logs", component: { template: "<div>logs</div>" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div>logs</div>" } },
     ],
   })
   await router.push("/clients")
@@ -65,6 +66,7 @@ describe("ClientsView", () => {
     localStorage.clear()
     resetKnownForTests()
     setActivePinia(createPinia())
+    setActiveEnvironmentId(1)
     for (const f of [getDashboardStats, getTopStats, queryLogs, listDhcpLeases, listApps]) vi.mocked(f).mockReset()
     mockApis()
   })
@@ -152,7 +154,7 @@ describe("ClientsView", () => {
     await flushPromises()
     await wrapper.get("#client-open-logs").trigger("click")
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe("/logs")
+    expect(router.currentRoute.value.path).toBe("/env/1/logs")
     expect(router.currentRoute.value.query.client).toBe("10.0.0.1")
   })
 })

@@ -34,6 +34,7 @@ import { useTimeRangeStore } from "../../stores/timeRange"
 import { useRefreshStore } from "../../stores/refresh"
 import { useAuthStore } from "../../stores/auth"
 import { clearCache } from "../../lib/charts"
+import { setActiveEnvironmentId } from "../../lib/activeEnv"
 import OverviewView from "./OverviewView.vue"
 
 const baseStats = {
@@ -70,8 +71,8 @@ function makeRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: "/", component: OverviewView },
-      { path: "/clients", component: { template: "<div>clients</div>" } },
-      { path: "/logs", component: { template: "<div>logs</div>" } },
+      { path: "/env/:envId/clients", name: "clients", component: { template: "<div>clients</div>" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div>logs</div>" } },
       { path: "/connect", component: { template: "<div>connect</div>" } },
     ],
   })
@@ -91,6 +92,7 @@ describe("OverviewView", () => {
     clearCache()
     localStorage.clear()
     setActivePinia(createPinia())
+    setActiveEnvironmentId(1)
     vi.mocked(getDashboardStats).mockReset()
     vi.mocked(forceUpdateBlockLists).mockReset()
     vi.mocked(getTopStats).mockReset()
@@ -171,7 +173,7 @@ describe("OverviewView", () => {
 
     await wrapper.get("#path-donut").findAll(".donut-row")[0]!.trigger("click") // Cached
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe("/logs")
+    expect(router.currentRoute.value.path).toBe("/env/1/logs")
     expect(router.currentRoute.value.query).toEqual({ responseType: "Cached" })
 
     await router.push("/")

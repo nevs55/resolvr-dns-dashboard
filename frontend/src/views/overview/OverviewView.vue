@@ -33,6 +33,7 @@ import CacheSizePanel from "../../components/overview/CacheSizePanel.vue"
 import { buildFlows } from "../../lib/charts"
 import TopList from "../../components/overview/TopList.vue"
 import LiveToggle from "../../components/ui/LiveToggle.vue"
+import { envRoute } from "../../lib/envRoute"
 
 const connection = useConnectionStore()
 const router = useRouter()
@@ -166,7 +167,7 @@ const outcomeItems = computed<DonutItem[]>(() => {
 })
 
 function openLogs(query: Record<string, string>): void {
-  void router.push({ path: "/logs", query })
+  void router.push(envRoute("logs", query))
 }
 
 function onPathSelect(item: DonutItem): void {
@@ -250,7 +251,7 @@ watch(
         >
           <strong class="font-mono">{{ rateLimitedClient.name }}</strong>
           is being rate-limited by the resolver.
-          <router-link to="/clients" class="ml-auto font-medium text-accent">View clients</router-link>
+          <router-link :to="envRoute('clients')" class="ml-auto font-medium text-accent">View clients</router-link>
         </div>
         <div
           v-if="blockListFreshness"

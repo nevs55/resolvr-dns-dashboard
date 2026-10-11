@@ -46,7 +46,7 @@ The screenshots use made-up data: private-range IPs, generic device names, and `
 
 Two small services:
 
-- **`backend/`** — a stateless Node/Express proxy in front of Technitium's HTTP API (Technitium sends no CORS headers, so the browser can't call it directly), plus a small SQLite database (`better-sqlite3`) holding Resolvr's own users, sessions, and the shared Technitium connection config. The main proxy (`/api/technitium/*`) only forwards `GET` requests on a hardcoded allowlist of read endpoints — nothing else gets through, regardless of what a client sends. Separately, a handful of admin-only action routes (`/api/actions/*`) each call exactly one specific mutating Technitium endpoint — flush cache, force a block-list update, add/remove a blocked domain, edit block list source URLs, revoke a session, uninstall an app, create/delete a zone, add a record — gated by role, never a general write proxy.
+- **`backend/`** — a stateless Node/Express proxy in front of Technitium's HTTP API (Technitium sends no CORS headers, so the browser can't call it directly), plus a small SQLite database (`better-sqlite3`) holding Resolvr's own users, sessions, and the admin-managed Technitium connection(s). The main proxy (`/api/technitium/*`) only forwards `GET` requests on a hardcoded allowlist of read endpoints — nothing else gets through, regardless of what a client sends. Separately, a handful of admin-only action routes (`/api/actions/*`) each call exactly one specific mutating Technitium endpoint — flush cache, force a block-list update, add/remove a blocked domain, edit block list source URLs, revoke a session, uninstall an app, create/delete a zone, add a record — gated by role, never a general write proxy.
 - **`frontend/`** — a Vue 3 + TypeScript + Vite SPA, served as static files in production.
 
 ```
@@ -214,6 +214,16 @@ After signing in:
 
 1. Go to **Connection Settings** (admin only) and point Resolvr at your Technitium server — its base URL and an API token (create one under Technitium's own Administration → Sessions → Create Token, or use a full login token). This is validated against the real server before it's saved, and shared by everyone who signs into this Resolvr instance.
 2. Go to **Users** to change both seeded passwords and add any other accounts — `admin` (full access) or `viewer` (read-only).
+
+### Multiple Technitium servers
+
+Resolvr can monitor several Technitium servers at once. Admins add and manage the whole list on the **Connection Settings** page — each entry is a name, a base URL, and its own API token. Every per-server page then lives under its own URL (`/env/<id>/...`), so each server has separate browser history and deep-linkable views.
+
+- **The landing page** (`/`) is a global overview: one snapshot of every server's health, version, and blocked-query count in the same time window. A server that is down or timing out degrades only its own row — it is never folded into a misleading zero total. Click a row to open that server's own Overview.
+- **Switch servers** with the selector in the sidebar. The choice is remembered per tab (sessionStorage), so two tabs can look at different servers at once, and it is never stored server-side or shared between users.
+- **Everything scopes to the active server** — every chart click-through lands on the same server's Query Logs, and browser-local history (known clients, block-list history, cache samples, remembered tabs) is kept separate per server so one environment's data never leaks into another.
+- **Tokens are write-only.** The API token is stored on the backend and used to authenticate with Technitium, but it is never returned to the browser or shown anywhere — editing a server's name or URL never requires re-entering the token.
+- **The list is shared read-only** with every signed-in role (the switcher needs it); only admins can add, edit, or delete servers. In the Home Assistant add-on, the single server is managed from the add-on's Configuration tab instead.
 
 ## Development
 

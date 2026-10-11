@@ -12,6 +12,7 @@ import { getTopStats, queryLogs, listDhcpLeases, listApps, type QueryLogEntry } 
 import { useConnectionStore } from "../../stores/connection"
 import { clearCache } from "../../lib/charts"
 import { resetKnownForTests } from "../../lib/clients"
+import { setActiveEnvironmentId, envScopedKey } from "../../lib/activeEnv"
 import ClientsExplorer from "./ClientsExplorer.vue"
 
 const NOW = Date.now()
@@ -71,7 +72,7 @@ async function mountTab(props: Partial<InstanceType<typeof ClientsExplorer>["$pr
     history: createMemoryHistory(),
     routes: [
       { path: "/", component: { template: "<div />" } },
-      { path: "/logs", component: { template: "<div />" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div />" } },
     ],
   })
   await router.push(path)
@@ -90,6 +91,7 @@ describe("ClientsExplorer", () => {
     localStorage.clear()
     resetKnownForTests()
     setActivePinia(createPinia())
+    setActiveEnvironmentId(1)
     vi.mocked(getTopStats).mockReset()
     vi.mocked(queryLogs).mockReset()
     vi.mocked(listDhcpLeases).mockReset()
@@ -192,7 +194,7 @@ describe("ClientsExplorer", () => {
     expect(first.wrapper.findAll(".badge-new")).toHaveLength(0)
     first.wrapper.unmount()
 
-    localStorage.setItem("resolvr.knownClients", JSON.stringify(["10.0.0.1", "10.0.0.2"]))
+    localStorage.setItem(envScopedKey("resolvr.knownClients"), JSON.stringify(["10.0.0.1", "10.0.0.2"]))
     resetKnownForTests()
     clearCache()
     const { wrapper } = await mountTab()
@@ -204,7 +206,7 @@ describe("ClientsExplorer", () => {
     const { wrapper, router } = await mountTab()
     await wrapper.get("#client-open-logs").trigger("click")
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe("/logs")
+    expect(router.currentRoute.value.path).toBe("/env/1/logs")
     expect(router.currentRoute.value.query).toEqual({ client: "10.0.0.1" })
 
     await router.push("/")

@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import type { DashboardStatsResult } from "../../api/technitium"
 import { bucketEnd, fmtInt, fullLabel, niceMax, pct, tickLabel } from "../../lib/charts"
+import { envRoute } from "../../lib/envRoute"
 import { useChartTip } from "../../composables/useChartTip"
 import ChartTip from "../charts/ChartTip.vue"
 
@@ -215,10 +216,7 @@ const selection = computed(() => {
 function openInLogs(): void {
   const s = selection.value
   if (!s) return
-  void router.push({
-    path: "/logs",
-    query: { start: new Date(labels.value[s.lo]!).toISOString(), end: bucketEnd(labels.value, s.hi) },
-  })
+  void router.push(envRoute("logs", { start: new Date(labels.value[s.lo]!).toISOString(), end: bucketEnd(labels.value, s.hi) }))
 }
 
 function zoomIn(): void {

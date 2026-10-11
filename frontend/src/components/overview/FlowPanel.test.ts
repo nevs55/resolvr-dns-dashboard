@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeEach } from "vitest"
 import { mount } from "@vue/test-utils"
 import { createRouter, createMemoryHistory } from "vue-router"
 import FlowPanel from "./FlowPanel.vue"
 import { buildFlows } from "../../lib/charts"
+import { setActiveEnvironmentId } from "../../lib/activeEnv"
 
 const flows = buildFlows([
   ...Array(6).fill({ responseType: "Cached", rcode: "NoError" }),
@@ -15,7 +16,7 @@ async function mountPanel(f = flows, state: "ready" | "loading" | "missing" | "e
     history: createMemoryHistory(),
     routes: [
       { path: "/", component: { template: "<div />" } },
-      { path: "/logs", component: { template: "<div />" } },
+      { path: "/env/:envId/logs", name: "logs", component: { template: "<div />" } },
     ],
   })
   await router.push("/")
@@ -23,6 +24,10 @@ async function mountPanel(f = flows, state: "ready" | "loading" | "missing" | "e
 }
 
 describe("FlowPanel", () => {
+  beforeEach(() => {
+    setActiveEnvironmentId(1)
+  })
+
   it("draws a node per path and outcome, and a link per hop", async () => {
     const { wrapper } = await mountPanel()
     // 1 query node + 3 paths + 3 outcomes

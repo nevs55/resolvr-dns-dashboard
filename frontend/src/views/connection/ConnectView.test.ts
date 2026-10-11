@@ -4,80 +4,94 @@ import { createPinia, setActivePinia } from "pinia"
 
 vi.mock("../../api/app", async () => {
   const actual = await vi.importActual<typeof import("../../api/app")>("../../api/app")
-  return { ...actual, setServerConfig: vi.fn(), getServerConfig: vi.fn() }
+  return {
+    ...actual,
+    listEnvironments: vi.fn(),
+    createEnvironment: vi.fn(),
+    updateEnvironment: vi.fn(),
+    deleteEnvironment: vi.fn(),
+    getStatus: vi.fn(),
+  }
 })
 
-import { setServerConfig, getServerConfig, AppApiError } from "../../api/app"
+import { listEnvironments, createEnvironment, updateEnvironment, deleteEnvironment, getStatus, AppApiError } from "../../api/app"
 import ConnectView from "./ConnectView.vue"
+
+function flushPromises() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
 
 describe("ConnectView", () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
-    vi.mocked(setServerConfig).mockReset()
-    vi.mocked(getServerConfig).mockReset().mockRejectedValue(new AppApiError("No config saved yet", 200))
+    vi.mocked(createEnvironment).mockReset()
+    vi.mocked(updateEnvironment).mockReset()
+    vi.mocked(deleteEnvironment).mockReset()
+    vi.mocked(getStatus).mockResolvedValue({ configured: true, connected: true, serverDomain: null, serverVersion: null })
   })
 
-  it("shows the connected badge with server domain and version after a successful save", async () => {
-    vi.mocked(setServerConfig).mockResolvedValue({
-      status: "ok",
+  it("lists the configured servers with their URLs", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({
+      managed: false,
+      environments: [
+        { id: 1, name: "Home", baseUrl: "http://10.0.60.60:5380" },
+        { id: 2, name: "Office", baseUrl: "http://10.0.70.70:5380" },
+      ],
+    })
+    const wrapper = mount(ConnectView)
+    await flushPromises()
+
+    expect(wrapper.find("#server-list").exists()).toBe(true)
+    expect(wrapper.text()).toContain("Home")
+    expect(wrapper.text()).toContain("Office")
+    expect(wrapper.text()).toContain("http://10.0.60.60:5380")
+  })
+
+  it("adds a server by name, URL and token", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ managed: false, environments: [] })
+    vi.mocked(createEnvironment).mockResolvedValue({
+      environment: { id: 1, name: "Home", baseUrl: "http://10.0.60.60:5380" },
       serverDomain: "dns.villa58.lan",
       serverVersion: "15.4",
     })
     const wrapper = mount(ConnectView)
     await flushPromises()
 
-    await wrapper.find("#server-url").setValue("http://10.0.60.60:5380")
-    await wrapper.find("#api-token").setValue("secret-token")
-    await wrapper.find("form").trigger("submit")
+    await wrapper.find("#env-name").setValue("Home")
+    await wrapper.find("#env-url").setValue("http://10.0.60.60:5380")
+    await wrapper.find("#env-token").setValue("secret-token")
+    await wrapper.find("#add-env-form").trigger("submit")
     await flushPromises()
 
-    expect(setServerConfig).toHaveBeenCalledWith("http://10.0.60.60:5380", "secret-token")
-    expect(wrapper.text()).toContain("Connected")
-    expect(wrapper.text()).toContain("dns.villa58.lan")
-    expect(wrapper.text()).toContain("v15.4")
+    expect(createEnvironment).toHaveBeenCalledWith("Home", "http://10.0.60.60:5380", "secret-token")
   })
 
-  it("shows a readable inline error on a failed save, not a raw stack trace", async () => {
-    vi.mocked(setServerConfig).mockRejectedValue(new AppApiError("Invalid token or session expired.", 400))
+  it("shows a readable inline error on a failed add", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({ managed: false, environments: [] })
+    vi.mocked(createEnvironment).mockRejectedValue(new AppApiError("Invalid token or session expired.", 400))
     const wrapper = mount(ConnectView)
     await flushPromises()
 
-    await wrapper.find("#server-url").setValue("http://10.0.60.60:5380")
-    await wrapper.find("#api-token").setValue("wrong-token")
-    await wrapper.find("form").trigger("submit")
+    await wrapper.find("#env-name").setValue("Home")
+    await wrapper.find("#env-url").setValue("http://10.0.60.60:5380")
+    await wrapper.find("#env-token").setValue("bad")
+    await wrapper.find("#add-env-form").trigger("submit")
     await flushPromises()
 
-    const errorEl = wrapper.find("#connection-error")
-    expect(errorEl.exists()).toBe(true)
-    expect(errorEl.text()).toBe("Invalid token or session expired.")
-    expect(errorEl.text()).not.toMatch(/at .*\.ts:\d+/) // not a stack trace
+    expect(wrapper.find("#connection-error").text()).toBe("Invalid token or session expired.")
   })
 
-  it("prefills the form from the currently saved server config", async () => {
-    vi.mocked(getServerConfig).mockReset().mockResolvedValue({
-      baseUrl: "http://10.0.60.60:5380",
-      token: "existing-token",
+  it("shows the read-only note and no add form when the add-on owns the connection", async () => {
+    vi.mocked(listEnvironments).mockResolvedValue({
+      managed: true,
+      environments: [{ id: 1, name: "Default", baseUrl: "http://dns.example.lan:5380" }],
     })
     const wrapper = mount(ConnectView)
     await flushPromises()
 
-    expect((wrapper.get("#server-url").element as HTMLInputElement).value).toBe("http://10.0.60.60:5380")
-    expect((wrapper.get("#api-token").element as HTMLInputElement).value).toBe("existing-token")
-  })
-
-  it("shows the connection as read-only, without a token field, when the add-on's Configuration tab owns it", async () => {
-    vi.mocked(getServerConfig).mockResolvedValue({ baseUrl: "http://dns.example.lan:5380", token: "", managed: true })
-    const wrapper = mount(ConnectView)
-    await flushPromises()
-
     expect(wrapper.find("#connection-managed").exists()).toBe(true)
-    expect(wrapper.text()).toContain("http://dns.example.lan:5380")
     expect(wrapper.text()).toContain("Configuration")
-    expect(wrapper.find("#api-token").exists()).toBe(false)
-    expect(wrapper.find("#test-connection").exists()).toBe(false)
+    expect(wrapper.find("#add-env-form").exists()).toBe(false)
   })
 })
-
-function flushPromises() {
-  return new Promise((resolve) => setTimeout(resolve, 0))
-}

@@ -19,7 +19,7 @@ const ADMIN = { username: "admin", password: "correct-horse-battery" };
 // browser actually talks to this backend.
 async function setupAuthed(fetchImpl: ReturnType<typeof vi.fn<typeof fetch>>) {
   const db = openDb({ path: ":memory:", seedAdmin: ADMIN });
-  db.prepare("UPDATE app_config SET base_url = ?, token = ? WHERE id = 1").run(
+  db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Default', ?, ?)").run(
     "http://10.0.60.60:5380",
     "secret-token",
   );
@@ -88,7 +88,7 @@ describe("proxy forwarding", () => {
     await agent.get("/api/technitium/dashboard/stats/get").query({ type: "LastHour" });
 
     // First call is the login-time /user/session/get validation ping,
-    // fired by PUT /api/config — but setupAuthed writes config directly
+    // fired by POST /api/environments — but setupAuthed writes config directly
     // to the DB and skips that endpoint, so the only call here is the
     // proxied request itself.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -125,14 +125,56 @@ describe("proxy forwarding", () => {
     await viewerAgent.post("/api/auth/login").send({ username: "viewer1", password: "viewer-password-123" });
 
     const proxyRes = await viewerAgent.get("/api/technitium/dashboard/stats/get");
-    const configRes = await viewerAgent.get("/api/config");
+    const listRes = await viewerAgent.get("/api/environments");
+    const createRes = await viewerAgent.post("/api/environments").send({ name: "X", baseUrl: "http://x", token: "t" });
     const usersRes = await viewerAgent.get("/api/users");
     const actionRes = await viewerAgent.post("/api/actions/flush-cache");
 
     expect(proxyRes.status).toBe(200);
-    expect(configRes.status).toBe(403);
+    expect(listRes.status).toBe(200); // viewers need the list for the switcher
+    expect(createRes.status).toBe(403); // but cannot add/change servers
     expect(usersRes.status).toBe(403);
     expect(actionRes.status).toBe(403);
+  });
+});
+
+describe("proxy server isolation", () => {
+  it("forwards to the environment named by ?env= and strips the env param upstream", async () => {
+    const db = openDb({ path: ":memory:", seedAdmin: ADMIN });
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Home', ?, ?)").run("http://10.0.60.60:5380", "home-token");
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Office', ?, ?)").run("http://10.0.70.70:5380", "office-token");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ response: { stats: { totalQueries: 1 } }, status: "ok" }),
+    );
+    const app = createApp({ db, fetchImpl });
+    const agent = request.agent(app);
+    await agent.post("/api/auth/login").send(ADMIN);
+
+    const res = await agent.get("/api/technitium/dashboard/stats/get").query({ env: "2", type: "LastHour" });
+
+    expect(res.status).toBe(200);
+    const [calledUrl, calledInit] = fetchImpl.mock.calls[0]!;
+    const url = new URL(String(calledUrl));
+    expect(url.origin + url.pathname).toBe("http://10.0.70.70:5380/api/dashboard/stats/get");
+    expect(url.searchParams.get("type")).toBe("LastHour");
+    expect(url.searchParams.has("env")).toBe(false); // routing param never leaks upstream
+    expect(new Headers(calledInit?.headers).get("Authorization")).toBe("Bearer office-token");
+  });
+
+  it("requires an explicit env when more than one server is configured", async () => {
+    const db = openDb({ path: ":memory:", seedAdmin: ADMIN });
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Home', ?, ?)").run("http://10.0.60.60:5380", "home-token");
+    db.prepare("INSERT INTO environments (name, base_url, token) VALUES ('Office', ?, ?)").run("http://10.0.70.70:5380", "office-token");
+    const fetchImpl = vi.fn();
+    const app = createApp({ db, fetchImpl });
+    const agent = request.agent(app);
+    await agent.post("/api/auth/login").send(ADMIN);
+
+    const res = await agent.get("/api/technitium/dashboard/stats/get");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Multiple servers");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

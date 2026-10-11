@@ -2,7 +2,7 @@
 
 const appVersion = __APP_VERSION__
 import { ref, watch, onMounted } from "vue"
-import { useRouter } from "vue-router"
+import { useRouter, useRoute } from "vue-router"
 import { useConnectionStore } from "../../stores/connection"
 import { useThemeStore } from "../../stores/theme"
 import { useServerUpdateStore } from "../../stores/serverUpdate"
@@ -11,7 +11,7 @@ import { useTimeRangeStore } from "../../stores/timeRange"
 import { useRefreshStore } from "../../stores/refresh"
 import { useAuthStore } from "../../stores/auth"
 import type { StatsDuration } from "../../api/technitium"
-import { navSections } from "./navSections"
+import { navSections, type NavItem } from "./navSections"
 import NavIcon from "./NavIcon.vue"
 
 const connection = useConnectionStore()
@@ -22,6 +22,7 @@ const timeRange = useTimeRangeStore()
 const refresh = useRefreshStore()
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const mobileOpen = ref(false)
 
 async function onLogout(): Promise<void> {
@@ -48,33 +49,53 @@ watch(
   { immediate: true },
 )
 
-// AppShell mounts once regardless of which route the app lands on
-// (unlike ConnectView, which only mounts when the user is actually on
-// /connect) — this is the one place that reliably checks the
-// admin-configured connection on every load, so the sidebar's status
-// dot doesn't get stuck on "Not connected" just because the user
-// landed on, say, /logs directly. Unconditional now that connection
-// state lives server-side (see stores/connection.ts) — there's no
-// local flag to check first the way a synchronously-loaded
-// localStorage value used to allow.
+// Loads the environment list and restores this browser's last selection on
+// every load, then re-checks the active server's connectivity. This is the
+// one place that reliably does both regardless of which route the app lands
+// on (unlike ConnectView, which only mounts on /connect).
 onMounted(() => {
-  void connection.testConnection()
+  void connection.loadEnvironments()
 })
+
+function navTo(item: NavItem) {
+  return item.scoped
+    ? { name: item.name, params: { envId: connection.activeEnvId } }
+    : { name: item.name }
+}
+
+function visibleItems(items: NavItem[]): NavItem[] {
+  return items.filter((i) => {
+    if (i.adminOnly && !auth.isAdmin) return false
+    if (i.localAccountsOnly && auth.external) return false
+    if (i.scoped && connection.activeEnvId === undefined) return false
+    return true
+  })
+}
+
+async function onSwitchEnv(id: number): Promise<void> {
+  await connection.selectEnvironment(id)
+  const name = route.name
+  if (name && name !== "overview-all" && name !== "connect" && name !== "users" && name !== "login") {
+    void router.replace({ name, params: { ...route.params, envId: String(id) }, query: route.query })
+  } else {
+    void router.push({ name: "overview", params: { envId: String(id) } })
+  }
+}
 
 // Matches the wireframe's sidebar count badges (Clients, Zones, Blocked
 // Zones, Apps, Server Info). Returns null to hide the badge — e.g. no
 // rate-limited clients, or a count that failed to load.
-function navBadge(to: string): number | null {
-  switch (to) {
-    case "/clients":
+function navBadge(name: string): number | null {
+  switch (name) {
+    case "clients":
       return sidebarCounts.rateLimitedClients > 0 ? sidebarCounts.rateLimitedClients : null
-    case "/zones":
+    case "zones":
       return sidebarCounts.zonesTotal
-    case "/blocked":
+    case "blocked":
       return sidebarCounts.blockedZonesTotal
-    case "/apps":
+    case "apps":
       return sidebarCounts.appsTotal
-    case "/server":
+    case "server":
       return serverUpdate.updateAvailable ? 1 : null
     default:
       return null
@@ -84,9 +105,9 @@ function navBadge(to: string): number | null {
 // Clients' badge is an alert (rate-limited devices) so it reads in
 // crit red, matching the wireframe; Server Info's is a warn-colored
 // update notice; everything else is a neutral count.
-function navBadgeClass(to: string): string {
-  if (to === "/clients") return "text-crit"
-  if (to === "/server") return "text-warn"
+function navBadgeClass(name: string): string {
+  if (name === "clients") return "text-crit"
+  if (name === "server") return "text-warn"
   return "text-gray-500"
 }
 </script>
@@ -137,9 +158,9 @@ function navBadgeClass(to: string): string {
           {{ section.label }}
         </div>
         <router-link
-          v-for="item in section.items.filter((i) => (!i.adminOnly || auth.isAdmin) && !(i.localAccountsOnly && auth.external))"
-          :key="item.to"
-          :to="item.to"
+          v-for="item in visibleItems(section.items)"
+          :key="item.name"
+          :to="navTo(item)"
           class="nav-link flex min-h-[33px] items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-gray-400 transition-colors hover:bg-background-hover hover:text-fg"
           active-class="!bg-background-hover !text-fg"
           exact-active-class="!bg-background-hover !text-fg"
@@ -148,13 +169,13 @@ function navBadgeClass(to: string): string {
           <NavIcon :name="item.icon" />
           {{ item.label }}
           <span
-            v-if="navBadge(item.to) !== null"
-            :id="item.to === '/server' ? 'server-update-badge' : undefined"
+            v-if="navBadge(item.name) !== null"
+            :id="item.name === 'server' ? 'server-update-badge' : undefined"
             class="ml-auto text-[10.5px] font-bold tabular-nums"
-            :class="navBadgeClass(item.to)"
-            :title="item.to === '/server' ? (serverUpdate.updateTitle ?? 'Update available') : undefined"
+            :class="navBadgeClass(item.name)"
+            :title="item.name === 'server' ? (serverUpdate.updateTitle ?? 'Update available') : undefined"
           >
-            {{ navBadge(item.to) }}
+            {{ navBadge(item.name) }}
           </span>
         </router-link>
       </nav>
@@ -215,6 +236,16 @@ function navBadgeClass(to: string): string {
           </svg>
         </button>
 
+        <select
+          v-if="connection.environments.length"
+          id="env-switcher"
+          :value="connection.activeEnvId"
+          class="rounded-md border border-border bg-background-card px-2 py-1.5 text-sm font-medium text-fg focus:border-accent focus:outline-none"
+          @change="onSwitchEnv(Number(($event.target as HTMLSelectElement).value))"
+        >
+          <option v-for="env in connection.environments" :key="env.id" :value="env.id">{{ env.name }}</option>
+        </select>
+
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <div id="topbar-range-seg" class="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background-hover p-0.5">
             <button
@@ -257,7 +288,7 @@ function navBadgeClass(to: string): string {
       </header>
 
       <div class="w-full max-w-6xl flex-1 px-5 py-6">
-        <router-view />
+        <router-view :key="connection.activeEnvId ?? 'none'" />
       </div>
     </div>
   </div>

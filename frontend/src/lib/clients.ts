@@ -1,5 +1,6 @@
 import type { QueryLogEntry } from "../api/technitium"
 import { pathOf } from "./charts"
+import { envScopedKey } from "./activeEnv"
 
 // Pure logic behind the Overview "Clients" tab: filtering, sorting and the
 // summaries drawn from a client's logged queries. No DOM, no network.
@@ -234,7 +235,7 @@ const KNOWN_KEY = "resolvr.knownClients"
 // nothing, so a fresh browser does not label every device new.
 export function readKnownClients(): Set<string> | null {
   try {
-    const raw = localStorage.getItem(KNOWN_KEY)
+    const raw = localStorage.getItem(envScopedKey(KNOWN_KEY))
     if (raw === null) return null
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? new Set(parsed.filter((x): x is string => typeof x === "string")) : null
@@ -251,7 +252,7 @@ export function newClientIps(ips: string[], known: ReadonlySet<string> | null): 
 export function rememberClients(ips: string[], known: ReadonlySet<string> | null): void {
   try {
     const all = new Set([...(known ?? []), ...ips])
-    localStorage.setItem(KNOWN_KEY, JSON.stringify([...all].slice(-500)))
+    localStorage.setItem(envScopedKey(KNOWN_KEY), JSON.stringify([...all].slice(-500)))
   } catch {
     // Storage blocked: nothing is flagged new, which is the safe failure.
   }

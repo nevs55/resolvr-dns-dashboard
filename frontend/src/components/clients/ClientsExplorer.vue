@@ -10,6 +10,7 @@ import {
   type StatsDuration,
 } from "../../api/technitium"
 import { useConnectionStore } from "../../stores/connection"
+import { envRoute } from "../../lib/envRoute"
 import { useRefreshStore } from "../../stores/refresh"
 import { useQueryLogsAppStore } from "../../stores/queryLogsApp"
 import { mapLimit } from "../../lib/async"
@@ -226,7 +227,7 @@ const labels = computed(() => Object.fromEntries(rows.value.map((r) => [r.ip, di
 const activity = computed(() => (props.logState === "ready" ? clientActivity(props.logEntries, 8, 24) : null))
 
 function openLogs(query: Record<string, string>): void {
-  void router.push({ path: "/logs", query })
+  void router.push(envRoute("logs", query))
 }
 
 function showAttention(): void {
